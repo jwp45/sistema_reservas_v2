@@ -14,6 +14,7 @@ from utils.whatsapp_sender import send_whatsapp_quotation
 from ui_v2.reservation_form import ReservationFormDialog
 from ui_v2.advanced_search_dialog import AdvancedSearchDialog
 from ui_v2.gallery_dialog import GalleryDialog
+from ui_v2.property_services_dialog import PropertyServicesDialog
 import webbrowser
 import urllib.parse
 
@@ -674,19 +675,10 @@ class ConsultationPage(QWidget):
         
         # p = (id, nombre, cap, dir, loc, prov, tipo, val, img, dorms, cams, banos)
         p = self.selected_property
-        
-        msg = f"Ficha Técnica de *{p[1]}*:\n\n"
-        msg += f"🛏️ Dormitorios: {p[9]}\n"
-        msg += f"🛌 Camas: {p[10]}\n"
-        msg += f"🚿 Baños: {p[11]}\n"
-        
         servs = self.db.get_property_services(p[0])
-        if servs:
-            msg += "\n✨ Servicios Adicionales:\n"
-            for icon, name in servs:
-                msg += f"{icon} {name}\n"
         
-        QMessageBox.information(self, "Amenities e Instalaciones", msg)
+        dialog = PropertyServicesDialog(self, property_data=p, services=servs)
+        dialog.exec()
 
     def open_gallery(self):
         if not self.selected_property: return
