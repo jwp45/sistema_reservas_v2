@@ -1,7 +1,7 @@
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
                              QLineEdit, QPushButton, QFrame, QMessageBox,
                              QFileDialog, QScrollArea, QGroupBox, QFormLayout,
-                             QTabWidget)
+                             QTabWidget, QCheckBox, QComboBox, QSpinBox)
 from PySide6.QtCore import Qt, QDate, Signal
 from PySide6.QtGui import QIcon, QColor, QFont
 from controllers.database import Database
@@ -102,10 +102,99 @@ class ConfigPage(QWidget):
         form_business.addRow("Logo Path:", logo_input_layout)
         form_business.addRow("", self.lbl_logo_preview)
         scroll_layout.addWidget(group_business)
+
+        # PREFERENCES
+        group_prefs = QGroupBox("Preferencias de Usuario")
+        group_prefs.setStyleSheet("QGroupBox { font-weight: bold; font-size: 14px; color: #e67e22; }")
+        form_prefs = QFormLayout(group_prefs)
+        form_prefs.setSpacing(15)
+        form_prefs.setContentsMargins(20, 30, 20, 20)
+        
+        self.check_show_wa_msg = QCheckBox("Mostrar aviso educativo al enviar WhatsApp")
+        self.check_show_wa_msg.setChecked(True)
+        self.check_show_wa_msg.setStyleSheet("font-size: 14px;")
+        form_prefs.addRow(self.check_show_wa_msg)
+        scroll_layout.addWidget(group_prefs)
         
         scroll.setWidget(scroll_content)
         gen_layout.addWidget(scroll)
         self.tabs.addTab(tab_general, "General")
+
+        # TAB: AUTOMATIZACIÓN
+        tab_auto = QWidget()
+        auto_layout = QVBoxLayout(tab_auto)
+        auto_layout.setContentsMargins(25, 25, 25, 25)
+        auto_layout.setSpacing(20)
+
+        group_resend = QGroupBox("Configuración de Resend (API)")
+        group_resend.setStyleSheet("QGroupBox { font-weight: bold; font-size: 14px; color: #9b59b6; }")
+        form_resend = QFormLayout(group_resend)
+        form_resend.setSpacing(15)
+        form_resend.setContentsMargins(20, 30, 20, 20)
+        
+        self.combo_service = QComboBox()
+        self.combo_service.addItems(["SMTP", "Resend"])
+        self.combo_service.setFixedHeight(35)
+        
+        self.entries['resend_api_key'] = self.create_input("re_...", is_password=True)
+        self.entries['resend_from_email'] = self.create_input("no-reply@tu-dominio.com")
+        
+        form_resend.addRow("Servicio de Email Activo:", self.combo_service)
+        form_resend.addRow("Resend API Key:", self.entries['resend_api_key'])
+        form_resend.addRow("Email Remitente Resend:", self.entries['resend_from_email'])
+        auto_layout.addWidget(group_resend)
+
+        group_reminders = QGroupBox("Recordatorios Automáticos")
+        group_reminders.setStyleSheet("QGroupBox { font-weight: bold; font-size: 14px; color: #e67e22; }")
+        form_reminders = QFormLayout(group_reminders)
+        form_reminders.setSpacing(15)
+        form_reminders.setContentsMargins(20, 30, 20, 20)
+        
+        self.spin_days = QSpinBox()
+        self.spin_days.setRange(0, 30)
+        self.spin_days.setValue(5)
+        self.spin_days.setFixedHeight(35)
+        self.spin_days.setSuffix(" días antes del check-in")
+        
+        form_reminders.addRow("Enviar aviso:", self.spin_days)
+        
+        lbl_hint = QLabel("💡 El sistema enviará automáticamente un correo con los detalles del inmueble (dirección, mapa, saldo pendiente) a los huéspedes que lleguen en el plazo indicado.")
+        lbl_hint.setWordWrap(True)
+        lbl_hint.setStyleSheet("color: #7f8c8d; font-style: italic; font-size: 12px; margin-top: 10px;")
+        form_reminders.addRow(lbl_hint)
+        
+        auto_layout.addWidget(group_reminders)
+
+        group_whatsapp = QGroupBox("Configuración de WhatsApp (API)")
+        group_whatsapp.setStyleSheet("QGroupBox { font-weight: bold; font-size: 14px; color: #25D366; }")
+        form_wa = QFormLayout(group_whatsapp)
+        form_wa.setSpacing(15)
+        form_wa.setContentsMargins(20, 30, 20, 20)
+        
+        self.combo_wa_service = QComboBox()
+        self.combo_wa_service.addItems(["Manual", "Meta Cloud API", "Twilio", "Wati", "UltraMsg"])
+        self.combo_wa_service.setFixedHeight(35)
+        self.combo_wa_service.currentTextChanged.connect(self.toggle_wa_fields)
+        
+        self.entries['whatsapp_api_key'] = self.create_input("Token / API Key", is_password=True)
+        self.entries['whatsapp_acc_id'] = self.create_input("Phone ID / Account SID")
+        self.entries['whatsapp_api_url'] = self.create_input("API URL / Endpoint")
+        
+        form_wa.addRow("Proveedor de Servicio:", self.combo_wa_service)
+        
+        # Guardar filas para poder ocultarlas
+        self.row_wa_key = form_wa.addRow("Token / API Key:", self.entries['whatsapp_api_key'])
+        self.row_wa_acc = form_wa.addRow("Account ID / Phone ID:", self.entries['whatsapp_acc_id'])
+        self.row_wa_url = form_wa.addRow("API URL (Si aplica):", self.entries['whatsapp_api_url'])
+        
+        lbl_wa_hint = QLabel("💡 Seleccione 'Manual' para usar su WhatsApp Web gratis. El resto de opciones requieren una cuenta activa con el proveedor seleccionado.")
+        lbl_wa_hint.setWordWrap(True)
+        lbl_wa_hint.setStyleSheet("color: #7f8c8d; font-style: italic; font-size: 12px; margin-top: 10px;")
+        form_wa.addRow(lbl_wa_hint)
+        
+        auto_layout.addWidget(group_whatsapp)
+        auto_layout.addStretch()
+        self.tabs.addTab(tab_auto, "Automatización")
 
         # TAB 2: TEMPORADA
         tab_season = QWidget()
@@ -177,6 +266,24 @@ class ConfigPage(QWidget):
         self.btn_save.clicked.connect(self.save_config)
         layout.addWidget(self.btn_save)
 
+    def toggle_wa_fields(self, service):
+        is_manual = service == "Manual"
+        self.entries['whatsapp_api_key'].setVisible(not is_manual)
+        self.entries['whatsapp_acc_id'].setVisible(not is_manual)
+        self.entries['whatsapp_api_url'].setVisible(service in ["Wati", "UltraMsg"])
+        
+        # Actualizar placeholders según el servicio
+        if service == "Twilio":
+            self.entries['whatsapp_api_key'].setPlaceholderText("Auth Token")
+            self.entries['whatsapp_acc_id'].setPlaceholderText("Account SID")
+        elif service == "Meta Cloud API":
+            self.entries['whatsapp_api_key'].setPlaceholderText("Permanent Access Token")
+            self.entries['whatsapp_acc_id'].setPlaceholderText("Phone Number ID")
+        elif service == "Wati":
+            self.entries['whatsapp_api_key'].setPlaceholderText("Access Token")
+            self.entries['whatsapp_acc_id'].setPlaceholderText("No necesario")
+            self.entries['whatsapp_api_url'].setPlaceholderText("https://live-server-....wati.io")
+
     def open_calendar(self, target):
         initial = self.val_date_start if target == "start" else self.val_date_end
         dlg = ModernCalendarDialog(initial, self)
@@ -244,6 +351,24 @@ class ConfigPage(QWidget):
                         if field == 'logo_path' and val_str:
                             self.update_logo_preview(val_str)
                     
+                    if field == 'show_wa_educational_msg':
+                        self.check_show_wa_msg.setChecked(bool(value))
+
+                    if field == 'email_service_type':
+                        idx = self.combo_service.findText(str(value))
+                        if idx >= 0: self.combo_service.setCurrentIndex(idx)
+                    
+                    if field == 'reminder_days_before':
+                        self.spin_days.setValue(int(value) if value is not None else 5)
+
+                    if field == 'whatsapp_service_type':
+                        idx = self.combo_wa_service.findText(str(value))
+                        if idx >= 0: self.combo_wa_service.setCurrentIndex(idx)
+                        self.toggle_wa_fields(str(value)) # Ocultar/Mostrar según carga
+                    
+                    if field in ['whatsapp_api_key', 'whatsapp_acc_id', 'whatsapp_api_url']:
+                        self.entries[field].setText(str(value) if value else "")
+
                     if field == 'season_start' and value:
                         d = QDate.fromString(str(value), "yyyy-MM-dd")
                         self.val_date_start = d
@@ -257,6 +382,10 @@ class ConfigPage(QWidget):
         data = {field: entry.text() for field, entry in self.entries.items()}
         data['season_start'] = self.val_date_start.toString("yyyy-MM-dd")
         data['season_end'] = self.val_date_end.toString("yyyy-MM-dd")
+        data['show_wa_educational_msg'] = 1 if self.check_show_wa_msg.isChecked() else 0
+        data['email_service_type'] = self.combo_service.currentText()
+        data['whatsapp_service_type'] = self.combo_wa_service.currentText()
+        data['reminder_days_before'] = self.spin_days.value()
         
         # Validation
         required = ["smtp_server", "smtp_port", "smtp_user", "smtp_password", "from_email", "business_name", "whatsapp_number"]

@@ -177,6 +177,7 @@ class ConsultationPage(QWidget):
         self.marquee_timer.timeout.connect(self.update_marquee)
         self.full_address = ""
         self.display_address = ""
+        self.show_wa_instructions = True # Estado para recordar preferencia del usuario
         
         self.init_ui()
         self.load_initial_data()
@@ -1017,7 +1018,10 @@ class ConsultationPage(QWidget):
             "final_per_night": f"${((costo_total - disc_val)/noches):,.0f}".replace(",", ".") if noches > 0 else "$0",
             "dormitorios": self.selected_property[9], 
             "camas": self.selected_property[10], 
-            "baños": self.selected_property[11]
+            "baños": self.selected_property[11],
+            "video_url": self.selected_property[12] if len(self.selected_property) > 12 else None,
+            "checkin_time": self.selected_property[13] if len(self.selected_property) > 13 else "14:00",
+            "checkout_time": self.selected_property[14] if len(self.selected_property) > 14 else "10:00"
         }
 
         if mode == "email":
@@ -1063,22 +1067,36 @@ class ConsultationPage(QWidget):
                 # 1. Generar la URL pero NO abrirla todavía (auto_open=False)
                 whatsapp_url = send_whatsapp_quotation(tel, nombre, data, auto_open=False)
                 
-                # 2. Mostrar el aviso educativo (Modal para esperar al usuario)
-                msg = QMessageBox(self)
-                msg.setWindowTitle("Envío a WhatsApp")
-                msg.setIcon(QMessageBox.Information)
-                msg.setTextFormat(Qt.RichText) # Asegurar que acepte HTML
-                msg.setText("<b>¡Todo listo para enviar!</b>")
-                
-                info_text = "Hemos preparado el presupuesto y se abrirá el chat automáticamente.<br><br>"
-                if has_image:
-                    info_text += "<b>¡Atención! Copiamos la FOTO al portapapeles:</b><br>"
-                    info_text += "Cuando se abra el chat, simplemente presiona <b>Ctrl + V</b> para pegar la foto de la casa y enviarla junto al texto.<br><br>"
-                
-                info_text += "Haz clic en <b>ACEPTAR</b> para abrir el chat ahora."
-                
-                msg.setInformativeText(info_text)
-                msg.exec() # El código se detiene aquí hasta que el usuario cierre el mensaje
+                # Obtener configuración para ver si mostramos el mensaje
+                config = self.db.get_config()
+                show_msg = config.get('show_wa_educational_msg', 1) if config else 1
+
+                if show_msg:
+                    # 2. Mostrar el aviso educativo (Modal para esperar al usuario)
+                    msg = QMessageBox(self)
+                    msg.setWindowTitle("Envío a WhatsApp")
+                    msg.setIcon(QMessageBox.Information)
+                    msg.setTextFormat(Qt.RichText) # Asegurar que acepte HTML
+                    msg.setText("<b>¡Todo listo para enviar!</b>")
+                    
+                    info_text = "Hemos preparado el presupuesto y se abrirá el chat automáticamente.<br><br>"
+                    if has_image:
+                        info_text += "<b>¡Atención! Copiamos la FOTO al portapapeles:</b><br>"
+                        info_text += "Cuando se abra el chat, simplemente presiona <b>Ctrl + V</b> para pegar la foto de la casa y enviarla junto al texto.<br><br>"
+                    
+                    info_text += "Haz clic en <b>ACEPTAR</b> para abrir el chat ahora."
+                    
+                    msg.setInformativeText(info_text)
+
+                    # Agregar Checkbox para no volver a mostrar
+                    cb = QCheckBox("No volver a mostrar este aviso")
+                    msg.setCheckBox(cb)
+
+                    msg.exec() # El código se detiene aquí hasta que el usuario cierre el mensaje
+
+                    # Si el check está marcado, guardamos la preferencia
+                    if cb.isChecked():
+                        self.db.set_config_value('show_wa_educational_msg', 0)
                 
                 # 3. RECIÉN AHORA abrimos el navegador con un mini delay para asegurar el foco
                 # Usamos el método exacto del Dashboard (QDesktopServices + QUrl)

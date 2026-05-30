@@ -13,6 +13,7 @@ from controllers.database import Database
 from controllers.property_controller import PropertyController
 from controllers.client_controller import ClientController
 from controllers.reservation_controller import ReservationController
+from controllers.automation_controller import AutomationController
 
 # Importar nuevas páginas V2
 from ui_v2.client_list_page import ClientListPage
@@ -292,6 +293,31 @@ class MainWindowV2(QMainWindow):
         self.init_ui()
         self.refresh_dashboard()
         
+        # Automatización de recordatorios en segundo plano
+        from PySide6.QtCore import QTimer
+        self.auto_timer = QTimer(self)
+        self.auto_timer.timeout.connect(self.run_automations)
+        self.auto_timer.start(1800000) # Ejecutar cada 30 minutos
+        
+        QTimer.singleShot(5000, self.run_automations) # Primera ejecución a los 5 seg
+
+    def run_automations(self):
+        """Ejecuta las tareas automáticas del sistema."""
+        print("DEBUG: Iniciando tareas automáticas (Recordatorios y WhatsApp Status)...")
+        self.automation = AutomationController()
+        
+        # 1. Procesar recordatorios de email
+        result = self.automation.process_reminders()
+        if result.get('sent', 0) > 0:
+            print(f"AUTOMATION: {result.get('message')}")
+        
+        # 2. Actualizar estados de WhatsApp (Twilio)
+        updated_wa = self.automation.update_whatsapp_statuses()
+        if updated_wa:
+            print(f"AUTOMATION: Se actualizaron {updated_wa} estados de WhatsApp.")
+            
+        self.refresh_dashboard()
+
     def init_ui(self):
         # Widget Central
         self.central_widget = QWidget()
@@ -460,7 +486,30 @@ class MainWindowV2(QMainWindow):
         self.card_checkout = self._create_movement_card("📤 PRÓXIMOS CHECK-OUT", "#2980b9")
         self.movements_layout.addWidget(self.card_checkout)
         self.content_layout.addLayout(self.movements_layout)
-        
+
+        # --- SECCIÓN: NOTIFICACIONES AUTOMÁTICAS ---
+        self.notif_section = QFrame()
+        self.notif_section.setStyleSheet("background-color: white; border-radius: 15px; border: 1px solid #eef0f2;")
+        self.notif_layout = QVBoxLayout(self.notif_section)
+        self.notif_layout.setContentsMargins(25, 25, 25, 25)
+        self.notif_layout.setSpacing(15)
+
+        notif_header = QHBoxLayout()
+        lbl_notif_title = QLabel("🤖 NOTIFICACIONES AUTOMÁTICAS DE HOY")
+        lbl_notif_title.setStyleSheet("font-size: 13px; font-weight: 800; color: #9b59b6; border: none;")
+        notif_header.addWidget(lbl_notif_title)
+        notif_header.addStretch()
+        self.notif_layout.addLayout(notif_header)
+
+        self.notif_list_container = QWidget()
+        self.notif_list_container.setStyleSheet("border: none;")
+        self.notif_list_layout = QVBoxLayout(self.notif_list_container)
+        self.notif_list_layout.setContentsMargins(0, 0, 0, 0)
+        self.notif_list_layout.setSpacing(10)
+        self.notif_layout.addWidget(self.notif_list_container)
+
+        self.content_layout.addWidget(self.notif_section)
+
         # Seasonal Stats Section (ahora debajo de los movimientos)
         self.season_section = QFrame()
         self.season_section.setObjectName("SeasonSection")
@@ -501,8 +550,9 @@ class MainWindowV2(QMainWindow):
         self.pages.setCurrentIndex(index)
         for i, btn in enumerate(self.nav_buttons):
             btn.setChecked(i == index)
-        
-        if index == 0: self.refresh_dashboard()
+
+        if index == 0: 
+            self.refresh_dashboard() # Esto ya refresca KPIs y Notificaciones
         elif index == 1: self.page_consultation.load_initial_data()
         elif index == 2: self.page_reservas.load_data()
         elif index == 3: self.page_cotizaciones.load_data()
@@ -562,6 +612,7 @@ class MainWindowV2(QMainWindow):
         self.kpi_revenue.set_value(f"${int(this_month_rev):,}".replace(",", "."))
 
         self._update_movements()
+        self._update_notifications()
 
         # Season Stats
         try:
@@ -583,6 +634,45 @@ class MainWindowV2(QMainWindow):
                 self.season_section.setVisible(False)
         except Exception as e:
             self.season_section.setVisible(False)
+
+    def _update_notifications(self):
+        # Limpiar lista anterior
+        for i in reversed(range(self.notif_list_layout.count())):
+            self.notif_list_layout.itemAt(i).widget().setParent(None)
+            
+        notifs = self.db.get_todays_notifications()
+        
+        if not notifs:
+            lbl = QLabel("No se han enviado notificaciones automáticas el día de hoy.")
+            lbl.setStyleSheet("color: #95a5a6; font-style: italic; border: none;")
+            self.notif_list_layout.addWidget(lbl)
+            return
+            
+        for n in notifs:
+            item = QFrame()
+            item.setStyleSheet("background-color: #f8f9fa; border-radius: 8px; border: 1px solid #eef0f2;")
+            i_layout = QHBoxLayout(item)
+            i_layout.setContentsMargins(15, 10, 15, 10)
+            
+            # Hora
+            hora_str = n['fecha_envio_recordatorio'].strftime("%H:%M") if n['fecha_envio_recordatorio'] else "--:--"
+            lbl_hora = QLabel(f"🕒 {hora_str}")
+            lbl_hora.setStyleSheet("font-weight: bold; color: #7f8c8d; border: none;")
+            i_layout.addWidget(lbl_hora)
+            
+            # Cliente e Inmueble
+            lbl_info = QLabel(f"Aviso enviado a <b>{n['cliente']}</b> por estadía en <b>{n['inmueble']}</b>")
+            lbl_info.setStyleSheet("color: #2c3e50; border: none;")
+            i_layout.addWidget(lbl_info)
+            
+            i_layout.addStretch()
+            
+            # Estado
+            lbl_status = QLabel("  ✓ ENVIADO  ")
+            lbl_status.setStyleSheet("background-color: #eafaf1; color: #27ae60; font-weight: bold; font-size: 10px; border-radius: 4px; border: none;")
+            i_layout.addWidget(lbl_status)
+            
+            self.notif_list_layout.addWidget(item)
 
     def _update_movements(self):
         self._fill_movement_card(self.card_checkin, self.db.get_upcoming_checkins(), "No hay ingresos")

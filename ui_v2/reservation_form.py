@@ -80,6 +80,21 @@ class ReservationFormDialog(QDialog):
         title.setStyleSheet("color: white; font-size: 22px; font-weight: bold; border: none;")
         h_layout.addWidget(title)
         
+        # Fecha de creación (si existe en los datos)
+        created_at_str = self.initial_data.get('fecha_creacion')
+        if created_at_str:
+            if isinstance(created_at_str, (datetime, date)):
+                created_at_str = created_at_str.strftime("%d/%m/%Y %H:%M")
+            lbl_created = QLabel(f"Creada el: {created_at_str}")
+            lbl_created.setStyleSheet("color: #95a5a6; font-size: 12px; border: none; margin-top: 5px;")
+            title_vbox = QVBoxLayout()
+            title_vbox.setSpacing(0)
+            title_vbox.addWidget(title)
+            title_vbox.addWidget(lbl_created)
+            h_layout.addLayout(title_vbox)
+        else:
+            h_layout.addWidget(title)
+
         self.lbl_op_id = QLabel(f"Folio: OP-{datetime.now().strftime('%Y%m%d-%H%M')}")
         self.lbl_op_id.setStyleSheet("color: #3498db; font-size: 14px; font-weight: bold; border: none;")
         h_layout.addStretch()
@@ -374,9 +389,27 @@ class ReservationFormDialog(QDialog):
             }
         """)
         self.btn_save.clicked.connect(self.save_reservation)
+
+        self.btn_wa_confirm = QPushButton("📱 ENVIAR CONFIRMACIÓN WHATSAPP")
+        self.btn_wa_confirm.setFixedSize(300, 45)
+        self.btn_wa_confirm.setCursor(Qt.PointingHandCursor)
+        self.btn_wa_confirm.setStyleSheet("""
+            QPushButton {
+                background-color: #25D366;
+                color: white;
+                font-weight: bold;
+                border-radius: 6px;
+                border: none;
+                font-size: 13px;
+            }
+            QPushButton:hover { background-color: #128C7E; }
+        """)
+        self.btn_wa_confirm.clicked.connect(self.send_wa_confirmation)
+        if not self.reservation_id: self.btn_wa_confirm.hide() # Ocultar si es nueva hasta que se guarde
         
         btns_layout.addWidget(btn_cancel)
         btns_layout.addStretch()
+        btns_layout.addWidget(self.btn_wa_confirm)
         btns_layout.addWidget(self.btn_save)
         
         self.main_layout.addWidget(btns)
@@ -518,6 +551,9 @@ class ReservationFormDialog(QDialog):
             discount = total - total_desc
             self.edit_discount.setText(str(discount))
             self.chk_perc.setChecked(False) 
+            
+            # Guardar fecha de creación en initial_data para el header
+            self.initial_data['fecha_creacion'] = r[11]
             
             self.calculate_totals()
 
@@ -701,9 +737,9 @@ class ReservationFormDialog(QDialog):
         pendiente = costo_final - adelanto
         
         if self.reservation_id:
-            query = """UPDATE reservas SET id_clientes=%s, id_inmuebles=%s, fecha_ingreso=%s, fecha_egreso=%s, 
+            query = """UPDATE reservas SET id_cliente=%s, id_inmueble=%s, fecha_ingreso=%s, fecha_egreso=%s, 
                        valor_dia=%s, noches=%s, costo_total=%s, costo_con_descuento=%s, adelanto=%s, 
-                       pago_pendiente=%s, provincia=%s WHERE id_reservas=%s"""
+                       pago_pendiente=%s, provincia=%s WHERE id_reserva=%s"""
             params = (cid, id_inm, f_in, f_out, val_dia, noches, total, costo_final, adelanto, 
                       pendiente, self.property_map[p_name][5], self.reservation_id)
             cursor.execute(query, params)
@@ -718,14 +754,99 @@ class ReservationFormDialog(QDialog):
         
         if rid:
             self.db.connection.commit()
+            self.reservation_id = rid # Guardar ID por si era nueva
+            self.btn_wa_confirm.show() # Mostrar botón WhatsApp tras guardar
+            
             QMessageBox.information(self, "Éxito", "Reserva guardada correctamente.")
-            if not self.reservation_id: # Solo enviar si es nueva
+            
+            # --- ENVÍO DE EMAIL AUTOMÁTICO ---
+            # Solo enviamos email automático si es una reserva NUEVA (no edición)
+            if not self.initial_data.get('id_reserva'):
                 try:
-                    email_data = {"id_reserva": rid, "inmueble": p_name, "fecha_ingreso": f_in.strftime("%d/%m/%Y"),
-                                  "fecha_egreso": f_out.strftime("%d/%m/%Y"), "noches": noches, 
-                                  "costo_con_descuento": costo_final, "adelanto": adelanto, "pago_pendiente": pendiente}
+                    email_data = {
+                        "id_reserva": rid, 
+                        "inmueble": p_name, 
+                        "fecha_ingreso": f_in.strftime("%d/%m/%Y"),
+                        "fecha_egreso": f_out.strftime("%d/%m/%Y"), 
+                        "noches": noches, 
+                        "costo_con_descuento": costo_final, 
+                        "adelanto": adelanto, 
+                        "pago_pendiente": pendiente,
+                        "checkin_time": self.property_map[p_name][13] if len(self.property_map[p_name]) > 13 else "14:00",
+                        "checkout_time": self.property_map[p_name][14] if len(self.property_map[p_name]) > 14 else "10:00",
+                        "ubicacion": f"{self.property_map[p_name][3]}, {self.property_map[p_name][4]}"
+                    }
                     send_reservation_email(email, f"{nom} {ape}", email_data)
-                except: pass
+                except Exception as e:
+                    print(f"Error enviando email automático: {e}")
+            
+            # --- DISPARADOR DE WHATSAPP ---
+            # Preguntar SIEMPRE si quiere enviar por WhatsApp (ya sea nueva o edición)
+            res = QMessageBox.question(self, "WhatsApp", "¿Desea enviar la confirmación por WhatsApp ahora?",
+                                       QMessageBox.Yes | QMessageBox.No)
+            if res == QMessageBox.Yes:
+                self.send_wa_confirmation()
+                
             self.accept()
         else:
             QMessageBox.critical(self, "Error", "No se pudo guardar la reserva.")
+
+    def send_wa_confirmation(self):
+        from utils.whatsapp_sender import send_whatsapp_confirmation
+        
+        p_name = self.combo_prop.currentText()
+        if p_name not in self.property_map: return
+        
+        f_in = date(self.d_in.year(), self.d_in.month(), self.d_in.day())
+        f_out = date(self.d_out.year(), self.d_out.month(), self.d_out.day())
+        
+        # Obtener datos de propiedad del mapa
+        p_data = self.property_map[p_name]
+        pid = p_data[0]
+        
+        # Obtener servicios con iconos
+        servicios_raw = self.db.get_property_services(pid)
+        serv_str = ", ".join([f"{s[0]} {s[1]}" for s in servicios_raw]) if servicios_raw else "No especificados"
+
+        # Calcular financieros actuales
+        val_dia = self.get_clean_value(self.edit_price_day)
+        noches = (f_out - f_in).days
+        total = noches * val_dia
+        disc_val = self.get_clean_value(self.edit_discount)
+        
+        # Calcular descuento monto real
+        if self.chk_perc.isChecked():
+            descuento_monto = total * (disc_val / 100)
+        else:
+            descuento_monto = disc_val
+            
+        costo_final = total - descuento_monto
+        adelanto = self.get_clean_value(self.edit_advance)
+        pendiente = costo_final - adelanto
+
+        data = {
+            "id_reserva": self.reservation_id,
+            "inmueble": p_name,
+            "fecha_ingreso": f_in.strftime("%d/%m/%Y"),
+            "fecha_egreso": f_out.strftime("%d/%m/%Y"),
+            "noches": noches,
+            "checkin_time": p_data[13] if len(p_data) > 13 else "14:00",
+            "checkout_time": p_data[14] if len(p_data) > 14 else "10:00",
+            "direccion": p_data[3],
+            "localidad": p_data[4],
+            "provincia": p_data[5],
+            "dormitorios": p_data[9] if len(p_data) > 9 else 0,
+            "camas": p_data[10] if len(p_data) > 10 else 0,
+            "baños": p_data[11] if len(p_data) > 11 else 0,
+            "servicios": serv_str,
+            "valor_dia": val_dia,
+            "costo_total": total,
+            "descuento_monto": descuento_monto,
+            "costo_con_descuento": costo_final,
+            "adelanto": adelanto,
+            "pago_pendiente": pendiente
+        }
+        
+        sid = send_whatsapp_confirmation(self.edit_phone.text(), f"{self.edit_name.text()} {self.edit_surname.text()}", data)
+        if sid and isinstance(sid, str):
+            self.db.update_reservation_wa_status(self.reservation_id, sid, "sent")

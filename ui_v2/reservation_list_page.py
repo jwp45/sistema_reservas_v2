@@ -1,27 +1,26 @@
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
-                             QLineEdit, QPushButton, QFrame, QScrollArea, QMessageBox,
-                             QGridLayout, QApplication)
+                             QLineEdit, QPushButton, QFrame, QScrollArea,
+                             QMessageBox)
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QColor, QFont, QPixmap
+from PySide6.QtGui import QIcon, QColor
 from controllers.database import Database
-from datetime import datetime
+from controllers.automation_controller import AutomationController
 from ui_v2.payment_dialog import PaymentDialog
 from ui_v2.reservation_form import ReservationFormDialog
-from ui_v2.gallery_dialog import GalleryDialog
-import os
 
 class ReservationCard(QFrame):
     def __init__(self, data, parent=None):
         super().__init__(parent)
-        self.data = data # r = (0:id, 1:cliente, 2:tel, 3:inmueble, 4:f_ing, 5:f_eg, 6:noches, 7:val_d, 8:total, 9:final, 10:adelanto, 11:pendiente, 12:prov, 13:id_inm)
+        self.data = data
+        self.db = Database()
         self.init_ui()
 
     def init_ui(self):
-        self.setFixedHeight(160)
+        self.setFixedHeight(140)
         self.setStyleSheet("""
             #ReservationCard {
                 background-color: white;
-                border-radius: 15px;
+                border-radius: 12px;
                 border: 1px solid #eef0f2;
             }
             #ReservationCard:hover {
@@ -32,116 +31,140 @@ class ReservationCard(QFrame):
         self.setObjectName("ReservationCard")
         
         main_layout = QHBoxLayout(self)
-        main_layout.setContentsMargins(25, 20, 25, 20)
-        main_layout.setSpacing(25)
+        main_layout.setContentsMargins(20, 15, 20, 15)
+        main_layout.setSpacing(20)
 
-        # 1. ID & Payment Status
-        status_layout = QVBoxLayout()
+        # 1. ID & Status Badge
+        id_layout = QVBoxLayout()
         lbl_id = QLabel(f"R-{str(self.data[0]).zfill(5)}")
-        lbl_id.setStyleSheet("font-weight: 800; font-size: 15px; color: #34495e; border: none;")
-        status_layout.addWidget(lbl_id)
+        lbl_id.setStyleSheet("font-weight: 800; font-size: 14px; color: #34495e; border: none;")
+        id_layout.addWidget(lbl_id)
         
-        pendiente = float(self.data[11])
-        status_lbl = QLabel()
-        if pendiente <= 0:
-            status_lbl.setText("SALDADO ✅")
-            status_lbl.setStyleSheet("background-color: #eafaf1; color: #27ae60; font-size: 11px; font-weight: bold; padding: 6px 12px; border-radius: 6px;")
+        # Payment Status Badge
+        pendiente_raw = float(self.data[11]) if self.data[11] is not None else 0
+        status_lbl = QLabel("SALDADO" if pendiente_raw <= 0 else "PENDIENTE")
+        if pendiente_raw <= 0:
+            status_lbl.setStyleSheet("background-color: #eafaf1; color: #27ae60; font-size: 10px; font-weight: bold; padding: 4px 8px; border-radius: 4px;")
         else:
-            status_lbl.setText("PENDIENTE ⌛")
-            status_lbl.setStyleSheet("background-color: #fceaea; color: #e74c3c; font-size: 11px; font-weight: bold; padding: 6px 12px; border-radius: 6px;")
+            status_lbl.setStyleSheet("background-color: #fceaea; color: #e74c3c; font-size: 10px; font-weight: bold; padding: 4px 8px; border-radius: 4px;")
+        id_layout.addWidget(status_lbl)
         
-        status_layout.addWidget(status_lbl)
-        status_layout.addStretch()
-        main_layout.addLayout(status_layout)
+        # WhatsApp Status (Checks underneath status)
+        wa_status = self.data[15] if len(self.data) > 15 else None
+        if wa_status:
+            wa_lbl = QLabel()
+            wa_lbl.setFixedHeight(18)
+            if wa_status == "read":
+                wa_lbl.setText("✓✓ LEÍDO")
+                wa_lbl.setStyleSheet("color: #34b7f1; font-weight: bold; font-size: 9px; border: none;")
+            elif wa_status == "delivered":
+                wa_lbl.setText("✓✓ ENTREGADO")
+                wa_lbl.setStyleSheet("color: #95a5a6; font-weight: bold; font-size: 9px; border: none;")
+            elif wa_status == "sent":
+                wa_lbl.setText("✓ ENVIADO")
+                wa_lbl.setStyleSheet("color: #95a5a6; font-weight: bold; font-size: 9px; border: none;")
+            elif wa_status == "failed":
+                wa_lbl.setText("✕ ERROR")
+                wa_lbl.setStyleSheet("color: #e74c3c; font-weight: bold; font-size: 9px; border: none;")
+            id_layout.addWidget(wa_lbl)
+            
+        id_layout.addStretch()
+        main_layout.addLayout(id_layout)
 
-        # 2. Guest & Property Info
+        # 2. Main Info
         info_layout = QVBoxLayout()
-        info_layout.setSpacing(5)
+        info_layout.setSpacing(4)
         
         lbl_client = QLabel(str(self.data[1]).upper())
-        lbl_client.setStyleSheet("font-size: 18px; font-weight: 800; color: #2c3e50; border: none;")
+        lbl_client.setStyleSheet("font-size: 16px; font-weight: bold; color: #2c3e50; border: none;")
         
         lbl_prop = QLabel(f"🏠 {self.data[3]}")
-        lbl_prop.setStyleSheet("font-size: 14px; color: #34495e; font-weight: 600; border: none;")
+        lbl_prop.setStyleSheet("font-size: 13px; color: #34495e; border: none;")
         
-        lbl_dates = QLabel(f"📅 {self.fmt_date(self.data[4])} al {self.fmt_date(self.data[5])}")
-        lbl_dates.setStyleSheet("font-size: 13px; color: #7f8c8d; border: none;")
+        lbl_period = QLabel(f"📅 {self.fmt_date(self.data[4])} al {self.fmt_date(self.data[5])} ({self.data[6]} noches)")
+        lbl_period.setStyleSheet("font-size: 13px; color: #7f8c8d; border: none;")
         
-        info_layout.addWidget(lbl_client)
-        info_layout.addWidget(lbl_prop)
-        info_layout.addWidget(lbl_dates)
+        # Fecha de Registro (Creación)
+        try:
+            created_at = self.data[14]
+            created_str = self.fmt_date(created_at)
+            lbl_created = QLabel(f"📝 Registrada: {created_str}")
+            lbl_created.setStyleSheet("font-size: 11px; color: #95a5a6; border: none; font-style: italic;")
+            info_layout.addWidget(lbl_client)
+            info_layout.addWidget(lbl_prop)
+            info_layout.addWidget(lbl_period)
+            info_layout.addWidget(lbl_created)
+        except:
+            info_layout.addWidget(lbl_client)
+            info_layout.addWidget(lbl_prop)
+            info_layout.addWidget(lbl_period)
+        
         main_layout.addLayout(info_layout, 1)
 
-        # 3. Financial Summary
-        fin_layout = QVBoxLayout()
-        fin_layout.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        # 3. Price/Payment Info
+        price_layout = QVBoxLayout()
+        price_layout.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         
-        lbl_final_total = QLabel(f"Total: {self.format_currency(self.data[9])}")
-        lbl_final_total.setStyleSheet("font-size: 12px; color: #95a5a6; border: none;")
+        # Calculate real pending
+        adelanto = float(self.data[10]) if self.data[10] else 0
+        total_desc = float(self.data[9]) if self.data[9] else 0
+        pendiente = total_desc - adelanto
         
-        lbl_pending_val = QLabel(self.format_currency(pendiente) if pendiente > 0 else "SIN DEUDA")
-        color = "#e74c3c" if pendiente > 0 else "#27ae60"
-        lbl_pending_val.setStyleSheet(f"font-size: 22px; font-weight: 800; color: {color}; border: none;")
+        lbl_total = QLabel(f"Total: {self.format_currency(total_desc)}")
+        lbl_total.setStyleSheet("font-size: 11px; color: #95a5a6; border: none;")
         
-        lbl_pending_text = QLabel("SALDO PENDIENTE" if pendiente > 0 else "PAGO TOTAL")
-        lbl_pending_text.setStyleSheet(f"font-size: 10px; font-weight: bold; color: {color}; border: none;")
+        lbl_pending = QLabel(self.format_currency(pendiente) if pendiente > 0 else "SALDADO")
+        color_pend = "#e74c3c" if pendiente > 0 else "#27ae60"
+        lbl_pending.setStyleSheet(f"font-size: 20px; font-weight: 800; color: {color_pend}; border: none;")
+        
+        lbl_pend_text = QLabel("SALDO PENDIENTE" if pendiente > 0 else "PAGO TOTAL")
+        lbl_pend_text.setStyleSheet(f"font-size: 9px; font-weight: bold; color: {color_pend}; border: none;")
 
-        fin_layout.addWidget(lbl_final_total)
-        fin_layout.addWidget(lbl_pending_val)
-        fin_layout.addWidget(lbl_pending_text)
-        main_layout.addLayout(fin_layout)
+        price_layout.addWidget(lbl_total)
+        price_layout.addWidget(lbl_pending)
+        price_layout.addWidget(lbl_pend_text)
+        main_layout.addLayout(price_layout)
 
-        # 4. Action Buttons
-        actions_container = QWidget()
-        actions_container.setStyleSheet("background: transparent;")
-        btn_layout = QHBoxLayout(actions_container)
+        # 4. Integrated Action Buttons
+        btn_layout = QHBoxLayout()
         btn_layout.setSpacing(10)
         
-        self.btn_pay = QPushButton("💳 PAGOS")
-        self.btn_pay.setFixedSize(100, 40)
-        self.btn_pay.setCursor(Qt.PointingHandCursor)
-        self.btn_pay.setStyleSheet("""
-            QPushButton { background-color: #27ae60; color: white; font-weight: bold; border-radius: 8px; font-size: 11px; }
-            QPushButton:hover { background-color: #219150; }
-        """)
-        
-        self.btn_edit = QPushButton("✏️ EDITAR")
-        self.btn_edit.setFixedSize(100, 40)
-        self.btn_edit.setCursor(Qt.PointingHandCursor)
-        self.btn_edit.setStyleSheet("""
-            QPushButton { background-color: #3498db; color: white; font-weight: bold; border-radius: 8px; font-size: 11px; }
-            QPushButton:hover { background-color: #2980b9; }
-        """)
-        
-        self.btn_delete = QPushButton("🗑️")
-        self.btn_delete.setFixedSize(40, 40)
-        self.btn_delete.setCursor(Qt.PointingHandCursor)
-        self.btn_delete.setStyleSheet("""
-            QPushButton { background-color: #fceaea; color: #e74c3c; border: none; border-radius: 8px; }
-            QPushButton:hover { background-color: #f8d7da; }
-        """)
+        def create_action_btn(text, bg, hover, width=100):
+            btn = QPushButton(text)
+            btn.setFixedSize(width, 35)
+            btn.setCursor(Qt.PointingHandCursor)
+            btn.setStyleSheet(f"""
+                QPushButton {{ background-color: {bg}; color: white; font-weight: bold; border-radius: 6px; font-size: 11px; }}
+                QPushButton:hover {{ background-color: {hover}; }}
+            """)
+            return btn
+
+        self.btn_pay = create_action_btn("💳 PAGOS", "#27ae60", "#219150")
+        self.btn_edit = create_action_btn("✏️ EDITAR", "#3498db", "#2980b9")
+        self.btn_delete = create_action_btn("🗑️", "#f8d7da", "#f5c6cb", 35)
+        self.btn_delete.setStyleSheet(self.btn_delete.styleSheet().replace("white", "#e74c3c")) # Text color for delete
         
         btn_layout.addWidget(self.btn_pay)
         btn_layout.addWidget(self.btn_edit)
         btn_layout.addWidget(self.btn_delete)
-        main_layout.addWidget(actions_container)
+        main_layout.addLayout(btn_layout)
+
+    def format_currency(self, value):
+        try:
+            val = float(value)
+            return f"${val:,.0f}".replace(",", ".")
+        except: return "$0"
 
     def fmt_date(self, d):
-        if not d: return "-"
-        try:
-            dt = datetime.strptime(str(d), "%Y-%m-%d") if isinstance(d, str) else d
-            return dt.strftime("%d/%m/%y")
+        if not d: return ""
+        try: return d.strftime("%d/%m/%Y")
         except: return str(d)
-
-    def format_currency(self, val):
-        return f"${float(val):,.0f}".replace(",", ".")
 
 class ReservationListPage(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.db = Database()
         self.all_reservations = []
-        
         self.init_ui()
         self.load_data()
 
@@ -150,50 +173,59 @@ class ReservationListPage(QWidget):
         layout.setContentsMargins(30, 30, 30, 30)
         layout.setSpacing(25)
 
-        # --- HEADER ---
-        header_layout = QHBoxLayout()
-        
-        title_container = QVBoxLayout()
+        # Header
+        header = QHBoxLayout()
         title = QLabel("Gestión de Reservas")
         title.setStyleSheet("font-size: 26px; font-weight: bold; color: #2c3e50;")
-        self.lbl_stats = QLabel("Cargando estadísticas...")
-        self.lbl_stats.setStyleSheet("font-size: 14px; color: #7f8c8d;")
-        title_container.addWidget(title)
-        title_container.addWidget(self.lbl_stats)
+        header.addWidget(title)
         
+        header.addStretch()
+        
+        # Stats label
+        self.lbl_stats = QLabel("Total: 0 reservas | Deuda: $0")
+        self.lbl_stats.setStyleSheet("background-color: #f8f9fa; padding: 10px 20px; border-radius: 20px; color: #34495e; font-weight: 600; font-size: 13px;")
+        header.addWidget(self.lbl_stats)
+        
+        layout.addLayout(header)
+
+        # Search & Actions
+        search_layout = QHBoxLayout()
         self.search_input = QLineEdit()
         self.search_input.setPlaceholderText("🔍 Buscar por cliente, inmueble o ID...")
-        self.search_input.setFixedWidth(400)
         self.search_input.setFixedHeight(45)
         self.search_input.setStyleSheet("""
             QLineEdit {
-                padding-left: 20px;
-                border-radius: 22px;
+                padding-left: 15px;
                 border: 1px solid #d1d8e0;
+                border-radius: 10px;
                 background-color: white;
-                color: #2c3e50;
                 font-size: 14px;
             }
             QLineEdit:focus { border: 2px solid #3498db; }
         """)
         self.search_input.textChanged.connect(self.filter_cards)
-
-        btn_refresh = QPushButton("🔄 REFRESCAR")
-        btn_refresh.setFixedSize(140, 45)
-        btn_refresh.setCursor(Qt.PointingHandCursor)
-        btn_refresh.setStyleSheet("""
-            QPushButton { background-color: white; border: 1px solid #d1d8e0; border-radius: 22px; font-weight: bold; color: #34495e; }
-            QPushButton:hover { background-color: #f8f9fa; border: 1px solid #3498db; }
+        search_layout.addWidget(self.search_input, 1)
+        
+        btn_new = QPushButton("＋ NUEVA RESERVA")
+        btn_new.setFixedHeight(45)
+        btn_new.setFixedWidth(180)
+        btn_new.setCursor(Qt.PointingHandCursor)
+        btn_new.setStyleSheet("""
+            QPushButton {
+                background-color: #3498db;
+                color: white;
+                font-weight: bold;
+                border-radius: 10px;
+                font-size: 13px;
+            }
+            QPushButton:hover { background-color: #2980b9; }
         """)
-        btn_refresh.clicked.connect(self.load_data)
+        btn_new.clicked.connect(lambda: self.open_reservation_form())
+        search_layout.addWidget(btn_new)
+        
+        layout.addLayout(search_layout)
 
-        header_layout.addLayout(title_container)
-        header_layout.addStretch()
-        header_layout.addWidget(self.search_input)
-        header_layout.addWidget(btn_refresh)
-        layout.addLayout(header_layout)
-
-        # --- SCROLL AREA FOR CARDS ---
+        # Scroll Area for Cards
         self.scroll = QScrollArea()
         self.scroll.setWidgetResizable(True)
         self.scroll.setFrameShape(QFrame.NoFrame)
@@ -211,9 +243,27 @@ class ReservationListPage(QWidget):
 
     def load_data(self):
         if not self.db.connect(): return
+        
+        # Actualizar estados de WhatsApp inmediatamente al entrar (de forma silenciosa)
+        try:
+            from PySide6.QtCore import QTimer
+            QTimer.singleShot(100, self._sync_wa_statuses)
+        except: pass
+
         self.all_reservations = self.db.get_all_reservations()
         self.display_reservations(self.all_reservations)
         self.update_stats()
+
+    def _sync_wa_statuses(self):
+        """Tarea en segundo plano para sincronizar estados de WA sin bloquear la UI."""
+        try:
+            auto = AutomationController()
+            if auto.update_whatsapp_statuses():
+                # Si hubo cambios, forzar la recarga completa de la lista
+                print("DEBUG: Cambios en WA detectados, refrescando lista...")
+                self.load_data() 
+        except Exception as e:
+            print(f"Error sincronizando WA en vista: {e}")
 
     def display_reservations(self, data):
         # Clear existing cards
@@ -247,7 +297,7 @@ class ReservationListPage(QWidget):
 
     def update_stats(self):
         total_count = len(self.all_reservations)
-        total_pending = sum(float(r[11]) for r in self.all_reservations)
+        total_pending = sum(float(r[11]) for r in self.all_reservations if r[11] is not None)
         self.lbl_stats.setText(f"Total: {total_count} reservas activas | Deuda Pendiente: ${total_pending:,.0f}".replace(",", "."))
 
     def open_payments(self, r):
@@ -272,3 +322,8 @@ class ReservationListPage(QWidget):
                 QMessageBox.information(self, "Éxito", "Reserva eliminada correctamente.")
             else:
                 QMessageBox.warning(self, "Error", "No se pudo eliminar la reserva.")
+
+    def open_reservation_form(self, initial_data=None):
+        dialog = ReservationFormDialog(self, initial_data=initial_data)
+        if dialog.exec():
+            self.load_data()

@@ -84,7 +84,7 @@ class Database:
                 cursor.execute("ALTER TABLE cotizaciones MODIFY COLUMN id_cliente INT NULL")
                 cursor.execute("SET FOREIGN_KEY_CHECKS=1")
 
-            # 3. Crear tabla de configuración (Aseguramos columnas de temporada)
+            # 3. Crear tabla de configuración (Aseguramos columnas de temporada y Resend)
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS configuracion (
                     id INT PRIMARY KEY DEFAULT 1,
@@ -98,6 +98,11 @@ class Database:
                     logo_path VARCHAR(255),
                     season_start DATE DEFAULT NULL,
                     season_end DATE DEFAULT NULL,
+                    show_wa_educational_msg TINYINT(1) DEFAULT 1,
+                    email_service_type VARCHAR(20) DEFAULT 'SMTP',
+                    resend_api_key VARCHAR(255),
+                    resend_from_email VARCHAR(255),
+                    reminder_days_before INT DEFAULT 5,
                     CHECK (id = 1)
                 )
             """)
@@ -111,6 +116,50 @@ class Database:
                 cursor.execute("ALTER TABLE configuracion ADD COLUMN season_end DATE DEFAULT NULL")
             if 'logo_path' not in conf_cols:
                 cursor.execute("ALTER TABLE configuracion ADD COLUMN logo_path VARCHAR(255)")
+            if 'show_wa_educational_msg' not in conf_cols:
+                cursor.execute("ALTER TABLE configuracion ADD COLUMN show_wa_educational_msg TINYINT(1) DEFAULT 1")
+            if 'email_service_type' not in conf_cols:
+                cursor.execute("ALTER TABLE configuracion ADD COLUMN email_service_type VARCHAR(20) DEFAULT 'SMTP'")
+            if 'resend_api_key' not in conf_cols:
+                cursor.execute("ALTER TABLE configuracion ADD COLUMN resend_api_key VARCHAR(255)")
+            if 'resend_from_email' not in conf_cols:
+                cursor.execute("ALTER TABLE configuracion ADD COLUMN resend_from_email VARCHAR(255)")
+            if 'reminder_days_before' not in conf_cols:
+                cursor.execute("ALTER TABLE configuracion ADD COLUMN reminder_days_before INT DEFAULT 5")
+            if 'whatsapp_service_type' not in conf_cols:
+                cursor.execute("ALTER TABLE configuracion ADD COLUMN whatsapp_service_type VARCHAR(20) DEFAULT 'Manual'")
+            if 'whatsapp_api_key' not in conf_cols:
+                cursor.execute("ALTER TABLE configuracion ADD COLUMN whatsapp_api_key VARCHAR(255) DEFAULT NULL")
+            if 'whatsapp_api_url' not in conf_cols:
+                cursor.execute("ALTER TABLE configuracion ADD COLUMN whatsapp_api_url VARCHAR(255) DEFAULT NULL")
+            if 'whatsapp_acc_id' not in conf_cols:
+                cursor.execute("ALTER TABLE configuracion ADD COLUMN whatsapp_acc_id VARCHAR(255) DEFAULT NULL")
+
+            # Asegurar columna recordatorio_enviado y fecha_envio_recordatorio en reservas
+            cursor.execute("DESCRIBE reservas")
+            res_cols = {c[0]: c for c in cursor.fetchall()}
+            if 'recordatorio_enviado' not in res_cols:
+                cursor.execute("ALTER TABLE reservas ADD COLUMN recordatorio_enviado TINYINT(1) DEFAULT 0")
+            if 'fecha_envio_recordatorio' not in res_cols:
+                cursor.execute("ALTER TABLE reservas ADD COLUMN fecha_envio_recordatorio DATETIME DEFAULT NULL")
+            if 'fecha_creacion' not in res_cols:
+                cursor.execute("ALTER TABLE reservas ADD COLUMN fecha_creacion DATETIME DEFAULT CURRENT_TIMESTAMP")
+
+            # Asegurar columnas en inmuebles
+            cursor.execute("DESCRIBE inmuebles")
+            inm_cols = {c[0]: c for c in cursor.fetchall()}
+            if 'dormitorios' not in inm_cols:
+                cursor.execute("ALTER TABLE inmuebles ADD COLUMN dormitorios INT DEFAULT 0")
+            if 'camas' not in inm_cols:
+                cursor.execute("ALTER TABLE inmuebles ADD COLUMN camas INT DEFAULT 0")
+            if 'baños' not in inm_cols:
+                cursor.execute("ALTER TABLE inmuebles ADD COLUMN baños INT DEFAULT 0")
+            if 'video_url' not in inm_cols:
+                cursor.execute("ALTER TABLE inmuebles ADD COLUMN video_url VARCHAR(255) DEFAULT NULL")
+            if 'checkin_time' not in inm_cols:
+                cursor.execute("ALTER TABLE inmuebles ADD COLUMN checkin_time VARCHAR(20) DEFAULT '14:00'")
+            if 'checkout_time' not in inm_cols:
+                cursor.execute("ALTER TABLE inmuebles ADD COLUMN checkout_time VARCHAR(20) DEFAULT '10:00'")
 
             # ASEGURAR QUE EXISTE LA FILA ID=1
             cursor.execute("SELECT COUNT(*) FROM configuracion WHERE id = 1")
@@ -128,95 +177,6 @@ class Database:
             print(f"Error al inicializar la base de datos: {e}")
             import traceback
             traceback.print_exc()
-            
-            # 3. Crear tabla de configuración
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS configuracion (
-                    id INT PRIMARY KEY DEFAULT 1,
-                    smtp_server VARCHAR(255),
-                    smtp_port INT,
-                    smtp_user VARCHAR(255),
-                    smtp_password VARCHAR(255),
-                    from_email VARCHAR(255),
-                    business_name VARCHAR(255),
-                    whatsapp_number VARCHAR(50),
-                    logo_path VARCHAR(255),
-                    season_start DATE DEFAULT NULL,
-                    season_end DATE DEFAULT NULL,
-                    CHECK (id = 1)
-                )
-            """)
-            
-            # Sincronizar columnas si ya existe la tabla
-            try:
-                cursor.execute("ALTER TABLE configuracion ADD COLUMN season_start DATE DEFAULT NULL")
-                cursor.execute("ALTER TABLE configuracion ADD COLUMN season_end DATE DEFAULT NULL")
-                self.connection.commit()
-            except: pass
-            
-            # 5. Crear tabla de servicios de inmuebles
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS servicios_inmuebles (
-                    id_servicio INT AUTO_INCREMENT PRIMARY KEY,
-                    id_inmueble INT NOT NULL,
-                    nombre_servicio VARCHAR(100) NOT NULL,
-                    icono VARCHAR(50) DEFAULT '✨',
-                    FOREIGN KEY (id_inmueble) REFERENCES inmuebles(id_inmueble) ON DELETE CASCADE
-                )
-            """)
-            
-            # 6. Crear tabla de galería de inmuebles
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS galeria_inmuebles (
-                    id_imagen INT AUTO_INCREMENT PRIMARY KEY,
-                    id_inmueble INT NOT NULL,
-                    ruta_imagen VARCHAR(255) NOT NULL,
-                    FOREIGN KEY (id_inmueble) REFERENCES inmuebles(id_inmueble) ON DELETE CASCADE
-                )
-            """)
-            
-            # Asegurar que la columna icono existe
-            try:
-                cursor.execute("ALTER TABLE servicios_inmuebles ADD COLUMN icono VARCHAR(50) DEFAULT '✨'")
-                self.connection.commit()
-            except: pass
-            
-            # Asegurar que la columna existe por si la tabla ya fue creada
-            try:
-                cursor.execute("ALTER TABLE configuracion ADD COLUMN logo_path VARCHAR(255)")
-                self.connection.commit()
-            except: pass
-            
-            # Insertar valores por defecto si no existen
-            cursor.execute("SELECT COUNT(*) FROM configuracion")
-            if cursor.fetchone()[0] == 0:
-                cursor.execute("""
-                    INSERT INTO configuracion (id, smtp_server, smtp_port, smtp_user, smtp_password, from_email, business_name, whatsapp_number, logo_path)
-                    VALUES (1, 'smtp.gmail.com', 587, 'wolf10dra@gmail.com', 'xsyy xbcl rkoq esud', 'wolf10dra@gmail.com', 'Sistema de Reservas', '5492236689548', '')
-                """)
-
-            # Asegurar columnas de detalle en inmuebles
-            try:
-                cursor.execute("ALTER TABLE inmuebles ADD COLUMN dormitorios INT DEFAULT 0")
-                cursor.execute("ALTER TABLE inmuebles ADD COLUMN camas INT DEFAULT 0")
-                cursor.execute("ALTER TABLE inmuebles ADD COLUMN baños INT DEFAULT 0")
-                self.connection.commit()
-            except: pass
-
-            # 4. Sincronización inicial
-            sync_query = """
-                INSERT INTO historial_pagos (id_reserva, monto, fecha_pago)
-                SELECT id_reserva, adelanto, CURDATE()
-                FROM reservas
-                WHERE adelanto > 0 
-                AND id_reserva NOT IN (SELECT DISTINCT id_reserva FROM historial_pagos)
-            """
-            cursor.execute(sync_query)
-            
-            self.connection.commit()
-            cursor.close()
-        except Exception as e:
-            print(f"Error al inicializar la base de datos: {e}")
 
     def get_config(self):
         cursor = None
@@ -249,8 +209,13 @@ class Database:
 
             # Usamos una consulta más agresiva para asegurar que el ID 1 se actualice o cree
             query = """INSERT INTO configuracion 
-                       (id, smtp_server, smtp_port, smtp_user, smtp_password, from_email, business_name, whatsapp_number, logo_path, season_start, season_end)
-                       VALUES (1, %(smtp_server)s, %(smtp_port)s, %(smtp_user)s, %(smtp_password)s, %(from_email)s, %(business_name)s, %(whatsapp_number)s, %(logo_path)s, %(season_start)s, %(season_end)s)
+                       (id, smtp_server, smtp_port, smtp_user, smtp_password, from_email, business_name, whatsapp_number, logo_path, 
+                        season_start, season_end, show_wa_educational_msg, email_service_type, resend_api_key, resend_from_email, 
+                        reminder_days_before, whatsapp_service_type, whatsapp_api_key, whatsapp_api_url, whatsapp_acc_id)
+                       VALUES (1, %(smtp_server)s, %(smtp_port)s, %(smtp_user)s, %(smtp_password)s, %(from_email)s, %(business_name)s, 
+                               %(whatsapp_number)s, %(logo_path)s, %(season_start)s, %(season_end)s, %(show_wa_educational_msg)s, 
+                               %(email_service_type)s, %(resend_api_key)s, %(resend_from_email)s, %(reminder_days_before)s,
+                               %(whatsapp_service_type)s, %(whatsapp_api_key)s, %(whatsapp_api_url)s, %(whatsapp_acc_id)s)
                        ON DUPLICATE KEY UPDATE
                        smtp_server = VALUES(smtp_server),
                        smtp_port = VALUES(smtp_port),
@@ -261,8 +226,16 @@ class Database:
                        whatsapp_number = VALUES(whatsapp_number),
                        logo_path = VALUES(logo_path),
                        season_start = VALUES(season_start),
-                       season_end = VALUES(season_end)"""
-            
+                       season_end = VALUES(season_end),
+                       show_wa_educational_msg = VALUES(show_wa_educational_msg),
+                       email_service_type = VALUES(email_service_type),
+                       resend_api_key = VALUES(resend_api_key),
+                       resend_from_email = VALUES(resend_from_email),
+                       reminder_days_before = VALUES(reminder_days_before),
+                       whatsapp_service_type = VALUES(whatsapp_service_type),
+                       whatsapp_api_key = VALUES(whatsapp_api_key),
+                       whatsapp_api_url = VALUES(whatsapp_api_url),
+                       whatsapp_acc_id = VALUES(whatsapp_acc_id)"""
             cursor.execute(query, data)
             affected = cursor.rowcount
             self.connection.commit()
@@ -276,6 +249,21 @@ class Database:
             return True
         except Exception as e:
             print(f"Error al actualizar configuración: {e}")
+            return False
+        finally:
+            if cursor: cursor.close()
+
+    def set_config_value(self, key, value):
+        """Actualiza un valor específico en la tabla de configuración."""
+        cursor = None
+        try:
+            cursor = self.connection.cursor(buffered=True)
+            query = f"UPDATE configuracion SET {key} = %s WHERE id = 1"
+            cursor.execute(query, (value,))
+            self.connection.commit()
+            return True
+        except Exception as e:
+            print(f"Error al actualizar config {key}: {e}")
             return False
         finally:
             if cursor: cursor.close()
@@ -442,7 +430,7 @@ class Database:
             cursor = self.connection.cursor(buffered=True)
             query = """SELECT id_inmueble, nombre, cantidad_personas, direccion, localidad, 
                               provincia, tipo, valor_dia, COALESCE(imagen, ''),
-                              dormitorios, camas, baños 
+                              dormitorios, camas, baños, video_url, checkin_time, checkout_time
                        FROM inmuebles"""
             cursor.execute(query)
             result = cursor.fetchall()
@@ -600,6 +588,39 @@ class Database:
         finally:
             if cursor: cursor.close()
 
+    def update_reservation_wa_status(self, reservation_id, sid, status):
+        """Actualiza el SID y estado del último mensaje de WhatsApp enviado."""
+        cursor = None
+        try:
+            cursor = self.connection.cursor(buffered=True)
+            query = "UPDATE reservas SET wa_last_sid = %s, wa_last_status = %s WHERE id_reserva = %s"
+            cursor.execute(query, (sid, status, reservation_id))
+            self.connection.commit()
+            return True
+        except Exception as e:
+            print(f"Error al actualizar estado WA: {e}")
+            return False
+        finally:
+            if cursor: cursor.close()
+
+    def get_reservations_with_wa_tracking(self):
+        """Obtiene reservas que tienen un SID de WhatsApp para seguimiento."""
+        cursor = None
+        try:
+            cursor = self.connection.cursor(dictionary=True, buffered=True)
+            # Buscamos las que tienen SID y que NO están en 'read' ni 'failed'
+            query = """SELECT id_reserva, wa_last_sid, wa_last_status 
+                       FROM reservas 
+                       WHERE wa_last_sid IS NOT NULL 
+                       AND (wa_last_status IS NULL OR wa_last_status NOT IN ('read', 'failed'))"""
+            cursor.execute(query)
+            return cursor.fetchall()
+        except Exception as e:
+            print(f"Error al obtener reservas WA: {e}")
+            return []
+        finally:
+            if cursor: cursor.close()
+
     def get_all_reservations(self):
         cursor = None
         try:
@@ -607,7 +628,8 @@ class Database:
             query = """SELECT r.id_reserva, CONCAT(c.nombre, ' ', c.apellido), c.telefono,
                               i.nombre, r.fecha_ingreso, r.fecha_egreso, r.noches,
                               r.valor_dia, r.costo_total, r.costo_con_descuento,
-                              r.adelanto, r.pago_pendiente, r.provincia, r.id_inmueble
+                              r.adelanto, r.pago_pendiente, r.provincia, r.id_inmueble,
+                              r.fecha_creacion, r.wa_last_status
                        FROM reservas r
                        JOIN clientes c ON r.id_cliente = c.id_clientes
                        JOIN inmuebles i ON r.id_inmueble = i.id_inmueble
@@ -640,7 +662,7 @@ class Database:
             cursor = self.connection.cursor(buffered=True)
             query = """SELECT id_cliente, id_inmueble, fecha_ingreso, fecha_egreso,
                               valor_dia, noches, costo_total, costo_con_descuento,
-                              adelanto, pago_pendiente, provincia
+                              adelanto, pago_pendiente, provincia, fecha_creacion
                        FROM reservas WHERE id_reserva = %s"""
             cursor.execute(query, (reservation_id,))
             return cursor.fetchone()
@@ -1115,17 +1137,58 @@ class Database:
         finally:
             if cursor: cursor.close()
 
-    def mark_quotation_mkt_sent(self, id_cotizacion):
-        """Marca una cotización indicando que ya se envió una oferta de marketing."""
+    def mark_reminder_sent(self, id_reserva):
+        """Marca una reserva indicando que ya se envió el recordatorio de check-in."""
         cursor = None
         try:
             cursor = self.connection.cursor(buffered=True)
-            cursor.execute("UPDATE cotizaciones SET mkt_enviado = 1 WHERE id_cotizacion = %s", (id_cotizacion,))
+            cursor.execute("UPDATE reservas SET recordatorio_enviado = 1, fecha_envio_recordatorio = NOW() WHERE id_reserva = %s", (id_reserva,))
             self.connection.commit()
             return True
         except Exception as e:
-            print(f"Error al marcar mkt_enviado: {e}")
+            print(f"Error al marcar recordatorio_enviado: {e}")
             return False
+        finally:
+            if cursor: cursor.close()
+
+    def get_todays_notifications(self):
+        """Obtiene las notificaciones enviadas el día de hoy."""
+        cursor = None
+        try:
+            cursor = self.connection.cursor(dictionary=True, buffered=True)
+            query = """SELECT r.id_reserva, CONCAT(c.nombre, ' ', c.apellido) as cliente,
+                              i.nombre as inmueble, r.fecha_envio_recordatorio, r.recordatorio_enviado
+                       FROM reservas r
+                       JOIN clientes c ON r.id_cliente = c.id_clientes
+                       JOIN inmuebles i ON r.id_inmueble = i.id_inmueble
+                       WHERE DATE(r.fecha_envio_recordatorio) = CURDATE()
+                       ORDER BY r.fecha_envio_recordatorio DESC"""
+            cursor.execute(query)
+            return cursor.fetchall()
+        except Exception as e:
+            print(f"Error al obtener notificaciones de hoy: {e}")
+            return []
+        finally:
+            if cursor: cursor.close()
+
+    def get_pending_reminders(self, days=5):
+        """Obtiene reservas que inician en exactamente X días y no tienen recordatorio enviado."""
+        cursor = None
+        try:
+            cursor = self.connection.cursor(dictionary=True, buffered=True)
+            query = """SELECT r.*, c.nombre as cliente_nombre, c.apellido as cliente_apellido, c.email as cliente_email,
+                               i.nombre as inmueble_nombre, i.direccion as inmueble_direccion, i.localidad as inmueble_localidad,
+                               i.checkin_time, i.checkout_time
+                        FROM reservas r
+                       JOIN clientes c ON r.id_cliente = c.id_clientes
+                       JOIN inmuebles i ON r.id_inmueble = i.id_inmueble
+                       WHERE r.fecha_ingreso = DATE_ADD(CURDATE(), INTERVAL %s DAY)
+                       AND r.recordatorio_enviado = 0"""
+            cursor.execute(query, (days,))
+            return cursor.fetchall()
+        except Exception as e:
+            print(f"Error al obtener recordatorios pendientes: {e}")
+            return []
         finally:
             if cursor: cursor.close()
 

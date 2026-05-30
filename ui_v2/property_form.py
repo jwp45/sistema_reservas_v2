@@ -104,6 +104,23 @@ class PropertyFormDialog(QDialog):
         vbox_price.addWidget(self.edit_price)
         row2.addLayout(vbox_price)
         info_layout.addLayout(row2)
+
+        # Check-in/out Times
+        row_times = QHBoxLayout()
+        vbox_in = QVBoxLayout()
+        vbox_in.addWidget(QLabel("Hora Check-in:"))
+        self.edit_checkin = QLineEdit("14:00")
+        self.edit_checkin.setPlaceholderText("HH:MM")
+        vbox_in.addWidget(self.edit_checkin)
+        row_times.addLayout(vbox_in)
+
+        vbox_out = QVBoxLayout()
+        vbox_out.addWidget(QLabel("Hora Check-out:"))
+        self.edit_checkout = QLineEdit("10:00")
+        self.edit_checkout.setPlaceholderText("HH:MM")
+        vbox_out.addWidget(self.edit_checkout)
+        row_times.addLayout(vbox_out)
+        info_layout.addLayout(row_times)
         
         # Distribution
         dist_lbl = QLabel("Distribución de Camas y Baños:")
@@ -150,6 +167,23 @@ class PropertyFormDialog(QDialog):
         loc_layout.addLayout(row_loc)
         
         self.layout.addWidget(sec_loc)
+
+        # --- VIDEO SECTION ---
+        sec_video = self._create_section("📹 VIDEO DE YOUTUBE")
+        video_layout = QVBoxLayout(sec_video)
+        video_layout.setContentsMargins(25, 45, 25, 25)
+        video_layout.setSpacing(10)
+
+        self.edit_video = QLineEdit()
+        self.edit_video.setPlaceholderText("https://www.youtube.com/watch?v=...")
+        video_layout.addWidget(QLabel("Enlace del Video:"))
+        video_layout.addWidget(self.edit_video)
+        
+        lbl_hint = QLabel("💡 Este link se incluirá automáticamente en las cotizaciones.")
+        lbl_hint.setStyleSheet("color: #7f8c8d; font-size: 11px; font-style: italic; border: none;")
+        video_layout.addWidget(lbl_hint)
+        
+        self.layout.addWidget(sec_video)
         
         # --- SERVICES SECTION ---
         sec_serv = self._create_section("✨ SERVICIOS Y AMENITIES")
@@ -339,6 +373,9 @@ class PropertyFormDialog(QDialog):
             self.spin_dorms.setValue(p[9])
             self.spin_beds.setValue(p[10])
             self.spin_baths.setValue(p[11])
+            if len(p) > 12: self.edit_video.setText(p[12] or "")
+            if len(p) > 13: self.edit_checkin.setText(p[13] or "14:00")
+            if len(p) > 14: self.edit_checkout.setText(p[14] or "10:00")
             
             # Cargar servicios
             servs = self.db.get_property_services(self.property_id)
@@ -351,7 +388,8 @@ class PropertyFormDialog(QDialog):
             self.edit_name.text(), self.spin_people.value(), self.edit_address.text(),
             self.edit_city.text(), self.edit_prov.text(), self.combo_tipo.currentText(),
             float(self.edit_price.text() or 0), self.spin_dorms.value(),
-            self.spin_beds.value(), self.spin_baths.value()
+            self.spin_beds.value(), self.spin_baths.value(), self.edit_video.text().strip(),
+            self.edit_checkin.text().strip(), self.edit_checkout.text().strip()
         )
         
         if not self.db.connect(): return
@@ -360,13 +398,13 @@ class PropertyFormDialog(QDialog):
         if self.property_id:
             query = """UPDATE inmuebles SET nombre=%s, cantidad_personas=%s, direccion=%s, 
                        localidad=%s, provincia=%s, tipo=%s, valor_dia=%s, dormitorios=%s, 
-                       camas=%s, baños=%s WHERE id_inmueble=%s"""
+                       camas=%s, baños=%s, video_url=%s, checkin_time=%s, checkout_time=%s WHERE id_inmueble=%s"""
             cursor.execute(query, data + (self.property_id,))
             pid = self.property_id
         else:
             query = """INSERT INTO inmuebles (nombre, cantidad_personas, direccion, localidad, 
-                       provincia, tipo, valor_dia, dormitorios, camas, baños) 
-                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"""
+                       provincia, tipo, valor_dia, dormitorios, camas, baños, video_url, checkin_time, checkout_time) 
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"""
             cursor.execute(query, data)
             pid = cursor.lastrowid
             

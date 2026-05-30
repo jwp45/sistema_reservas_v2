@@ -1,6 +1,9 @@
 import smtplib
 import os
 import tempfile
+import json
+import urllib.request
+import urllib.error
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.mime.image import MIMEImage
@@ -73,8 +76,8 @@ def send_reservation_email(client_email, client_name, data):
         <p>Hola <strong>{client_name}</strong>,</p>
         <p>Te confirmamos los detalles de tu reserva en <strong>{config.get('business_name')}</strong>:</p>
         <table style="border-collapse: collapse; width: 100%; max-width: 500px;">
-            <tr><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>Fecha Ingreso:</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd;">{data.get('fecha_ingreso', '')}</td></tr>
-            <tr><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>Fecha Egreso:</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd;">{data.get('fecha_egreso', '')}</td></tr>
+            <tr><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>Fecha Ingreso:</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd;">{data.get('fecha_ingreso', '')} (Check-in: {data.get('checkin_time', '14:00')} hs)</td></tr>
+            <tr><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>Fecha Egreso:</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd;">{data.get('fecha_egreso', '')} (Check-out: {data.get('checkout_time', '10:00')} hs)</td></tr>
             <tr><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>Noches:</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd;">{data.get('noches', '')}</td></tr>
             <tr><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>Inmueble:</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd;">{data.get('inmueble', '')}</td></tr>
             <tr><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>Ubicación:</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd;">{data.get('ubicacion', 'Consultar')}</td></tr>
@@ -146,11 +149,13 @@ def send_quotation_email(client_email, client_name, data, image_paths=None):
                 
                 <div style="background-color: #f9f9f9; padding: 20px; border-radius: 5px; margin: 20px 0;">
                     <p style="margin: 5px 0;">📅 <strong>Periodo:</strong> Del {data.get('fecha_ingreso', '')} al {data.get('fecha_egreso', '')}</p>
+                    <p style="margin: 5px 0;">🕒 <strong>Horarios:</strong> Ingreso {data.get('checkin_time', '14:00')} hs | Egreso {data.get('checkout_time', '10:00')} hs</p>
                     <p style="margin: 5px 0;">🌙 <strong>Noches:</strong> {data.get('noches', '')}</p>
                     <p style="margin: 5px 0;">📍 <strong>Ubicación:</strong> {data.get('ubicacion', 'Consultar')}</p>
                     <p style="margin: 5px 0;">🛏️ <strong>Detalles:</strong> {data.get('dormitorios', 0)} Dorm. | {data.get('camas', 0)} Camas | {data.get('baños', 0)} Baños</p>
                     <h3 style="margin-top: 15px; color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 5px;">🏠 {data.get('inmueble', '')}</h3>
                     <p style="margin: 5px 0;">✨ <strong>Servicios:</strong> {data.get('servicios', 'No especificados')}</p>
+                    {f'<p style="margin: 10px 0; padding: 10px; background-color: #fff3e0; border-radius: 4px; border-left: 4px solid #ff9800;">🎥 <strong>¡Mira el video del inmueble!:</strong> <a href="{data["video_url"]}" style="color: #e67e22; font-weight: bold; text-decoration: none;">Ver en YouTube</a></p>' if data.get('video_url') else ''}
                 </div>
 
                 <div style="text-align: center; margin: 30px 0;">
@@ -369,4 +374,160 @@ def send_marketing_offer_email(client_email, client_name, data, contact_type='pr
         return True
     except Exception as e:
         print(f"Error al enviar correo: {e}")
+        return False
+
+def send_checkin_reminder_smtp(client_email, client_name, reservation_data):
+    """Envía un recordatorio de check-in utilizando SMTP tradicional."""
+    config = get_smtp_config()
+    smtp_user = config.get("smtp_user")
+    smtp_password = config.get("smtp_password")
+    smtp_server = config.get("smtp_server")
+    smtp_port = config.get("smtp_port")
+    from_email = config.get("from_email")
+    business_name = config.get("business_name")
+
+    if not smtp_user or not smtp_password:
+        return False
+
+    res_id = reservation_data.get('id_reserva', '—')
+    res_code = f"R-{str(res_id).zfill(5)}" if str(res_id).isdigit() else res_id
+
+    subject = f"⏳ ¡Faltan pocos días para tu estadía en {reservation_data.get('inmueble_nombre')}!"
+    
+    body = f"""
+    <html>
+    <body style="font-family: Arial, sans-serif; padding: 20px; line-height: 1.6;">
+        <h2 style="color: #2c3e50;">{business_name}</h2>
+        <p>Hola <strong>{client_name}</strong>,</p>
+        <p>¡Estamos muy emocionados por recibirte! Queremos que todo esté listo para tu llegada el próximo <strong>{reservation_data.get('fecha_ingreso')}</strong>.</p>
+        
+        <div style="background-color: #f4f7f6; padding: 15px; border-radius: 5px; margin: 20px 0;">
+            <p style="margin: 5px 0;"><strong>📍 Inmueble:</strong> {reservation_data.get('inmueble_nombre')}</p>
+            <p style="margin: 5px 0;"><strong>📅 Fecha Ingreso:</strong> {reservation_data.get('fecha_ingreso')} (a las {reservation_data.get('checkin_time', '14:00')} hs)</p>
+            <p style="margin: 5px 0;"><strong>🕒 Fecha Egreso:</strong> {reservation_data.get('fecha_egreso')} (a las {reservation_data.get('checkout_time', '10:00')} hs)</p>
+            <p style="margin: 5px 0;"><strong>Dirección:</strong> {reservation_data.get('inmueble_direccion')}, {reservation_data.get('inmueble_localidad')}</p>
+            <p style="margin: 5px 0;"><strong>Saldo Pendiente:</strong> ${float(reservation_data.get('pago_pendiente', 0)):,.2f}</p>
+        </div>
+
+        <p>Puedes ver la ubicación exacta en Google Maps aquí:<br>
+        <a href="https://www.google.com/maps/search/?api=1&query={reservation_data.get('inmueble_direccion').replace(' ', '+')}+{reservation_data.get('inmueble_localidad').replace(' ', '+')}">Ver Mapa</a></p>
+
+        <p>Cualquier duda, contáctanos por WhatsApp al {config.get('whatsapp_number')}.</p>
+        <br>
+        <p style="font-size: 12px; color: #7f8c8d;">Atentamente,<br>{business_name}</p>
+    </body>
+    </html>
+    """
+
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = subject
+    msg["From"] = f"{business_name} <{from_email}>"
+    msg["To"] = client_email
+    msg.attach(MIMEText(body, "html"))
+
+    try:
+        with smtplib.SMTP(smtp_server, smtp_port) as server:
+            server.starttls()
+            server.login(smtp_user, smtp_password)
+            server.sendmail(from_email, client_email, msg.as_string())
+        return True
+    except Exception as e:
+        print(f"Error al enviar recordatorio SMTP: {e}")
+        return False
+
+def send_checkin_reminder(client_email, client_name, reservation_data):
+    """Función híbrida que decide si enviar por Resend o SMTP según configuración."""
+    config = get_smtp_config()
+    service_type = config.get("email_service_type", "SMTP")
+    
+    if service_type == "Resend" and config.get("resend_api_key"):
+        print(f"DEBUG: Enviando recordatorio vía RESEND a {client_email}")
+        return send_checkin_reminder_resend(client_email, client_name, reservation_data)
+    else:
+        print(f"DEBUG: Enviando recordatorio vía SMTP a {client_email}")
+        return send_checkin_reminder_smtp(client_email, client_name, reservation_data)
+
+def send_checkin_reminder_resend(client_email, client_name, reservation_data):
+    """Envía un recordatorio de check-in utilizando la API de Resend."""
+    config = get_smtp_config()
+    api_key = config.get("resend_api_key")
+    from_email = config.get("resend_from_email") or config.get("from_email")
+    business_name = config.get("business_name")
+
+    if not api_key:
+        print("Error: No hay API Key de Resend configurada.")
+        return False
+
+    res_id = reservation_data.get('id_reserva', '—')
+    res_code = f"R-{str(res_id).zfill(5)}" if str(res_id).isdigit() else res_id
+
+    subject = f"⏳ ¡Faltan pocos días para tu estadía en {reservation_data.get('inmueble_nombre')}!"
+    
+    body = f"""
+    <html>
+    <body style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; color: #333; line-height: 1.6; max-width: 600px; margin: auto; border: 1px solid #eee; border-radius: 10px; padding: 20px;">
+        <div style="text-align: center; border-bottom: 2px solid #3498db; padding-bottom: 15px;">
+            <h1 style="color: #2c3e50; margin: 0;">{business_name}</h1>
+            <p style="color: #3498db; font-weight: bold; margin: 5px 0;">Recordatorio de Próximo Check-in ({res_code})</p>
+        </div>
+        
+        <div style="padding: 20px 0;">
+            <p>Hola <strong>{client_name}</strong>,</p>
+            <p>¡Estamos muy emocionados por recibirte! Queremos que todo esté listo para tu llegada el próximo <strong>{reservation_data.get('fecha_ingreso')}</strong>.</p>
+            
+            <div style="background-color: #f9f9f9; border-left: 4px solid #3498db; padding: 15px; margin: 20px 0;">
+                <h3 style="margin-top: 0; color: #2c3e50;">📍 Detalles de Ubicación</h3>
+                <p style="margin: 5px 0;"><strong>Inmueble:</strong> {reservation_data.get('inmueble_nombre')}</p>
+                <p style="margin: 5px 0;"><strong>Dirección:</strong> {reservation_data.get('inmueble_direccion')}, {reservation_data.get('inmueble_localidad')}</p>
+                <p style="margin: 15px 0 0 0; text-align: center;">
+                    <a href="https://www.google.com/maps/search/?api=1&query={reservation_data.get('inmueble_direccion').replace(' ', '+')}+{reservation_data.get('inmueble_localidad').replace(' ', '+')}" 
+                       style="background-color: #3498db; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;">VER EN GOOGLE MAPS</a>
+                </p>
+            </div>
+
+            <h3 style="color: #2c3e50;">ℹ️ Información Importante</h3>
+            <ul style="padding-left: 20px;">
+                <li><strong>Check-in:</strong> A partir de las {reservation_data.get('checkin_time', '14:00')} hs.</li>
+                <li><strong>Check-out:</strong> Hasta las {reservation_data.get('checkout_time', '10:00')} hs.</li>
+                <li><strong>Saldo Pendiente:</strong> ${float(reservation_data.get('pago_pendiente', 0)):,.2f}</li>
+            </ul>
+
+            <p>Si tienes alguna duda o necesitas coordinar tu horario de llegada, puedes escribirnos directamente por WhatsApp al <strong>{config.get('whatsapp_number')}</strong>.</p>
+        </div>
+
+        <div style="text-align: center; border-top: 1px solid #eee; padding-top: 20px; font-size: 12px; color: #7f8c8d;">
+            <p>Este es un mensaje automático enviado por {business_name}.<br>Por favor, no respondas a este correo.</p>
+        </div>
+    </body>
+    </html>
+    """
+
+    payload = {
+        "from": f"{business_name} <{from_email}>",
+        "to": [client_email],
+        "subject": subject,
+        "html": body
+    }
+
+    try:
+        req = urllib.request.Request(
+            "https://api.resend.com/emails",
+            data=json.dumps(payload).encode("utf-8"),
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36"
+            },
+            method="POST"
+        )
+        with urllib.request.urlopen(req) as response:
+            res_body = response.read().decode("utf-8")
+            print(f"Resend Success Response: {res_body}")
+            return True
+    except urllib.error.HTTPError as e:
+        error_body = e.read().decode("utf-8")
+        print(f"Error HTTP de Resend ({e.code}): {error_body}")
+        return False
+    except Exception as e:
+        print(f"Error inesperado al enviar por Resend: {e}")
         return False
