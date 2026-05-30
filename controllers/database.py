@@ -424,6 +424,20 @@ class Database:
         finally:
             if cursor: cursor.close()
 
+    def get_property_by_id(self, property_id):
+        """Obtiene los datos de un inmueble por su ID."""
+        cursor = None
+        try:
+            cursor = self.connection.cursor(buffered=True)
+            query = "SELECT * FROM inmuebles WHERE id_inmueble = %s"
+            cursor.execute(query, (property_id,))
+            return cursor.fetchone()
+        except Exception as e:
+            print(f"Error al obtener inmueble por ID: {e}")
+            return None
+        finally:
+            if cursor: cursor.close()
+
     def get_all_properties(self):
         cursor = None
         try:
@@ -618,6 +632,20 @@ class Database:
         except Exception as e:
             print(f"Error al obtener reservas WA: {e}")
             return []
+        finally:
+            if cursor: cursor.close()
+
+    def get_reservation_client_id(self, reservation_id):
+        """Obtiene el ID del cliente de una reserva específica."""
+        cursor = None
+        try:
+            cursor = self.connection.cursor(buffered=True)
+            cursor.execute("SELECT id_cliente FROM reservas WHERE id_reserva = %s", (reservation_id,))
+            res = cursor.fetchone()
+            return res[0] if res else None
+        except Exception as e:
+            print(f"Error al obtener id_cliente de reserva: {e}")
+            return None
         finally:
             if cursor: cursor.close()
 

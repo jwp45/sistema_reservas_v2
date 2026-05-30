@@ -1,3 +1,4 @@
+import os
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
                              QLineEdit, QPushButton, QFrame, QScrollArea,
                              QMessageBox)
@@ -141,9 +142,11 @@ class ReservationCard(QFrame):
 
         self.btn_pay = create_action_btn("💳 PAGOS", "#27ae60", "#219150")
         self.btn_edit = create_action_btn("✏️ EDITAR", "#3498db", "#2980b9")
+        self.btn_print = create_action_btn("🖨️ IMPRIMIR", "#9b59b6", "#8e44ad")
         self.btn_delete = create_action_btn("🗑️", "#f8d7da", "#f5c6cb", 35)
         self.btn_delete.setStyleSheet(self.btn_delete.styleSheet().replace("white", "#e74c3c")) # Text color for delete
         
+        btn_layout.addWidget(self.btn_print)
         btn_layout.addWidget(self.btn_pay)
         btn_layout.addWidget(self.btn_edit)
         btn_layout.addWidget(self.btn_delete)
@@ -274,11 +277,65 @@ class ReservationListPage(QWidget):
         for r in data:
             card = ReservationCard(r)
             # Connect integrated buttons
+            card.btn_print.clicked.connect(lambda chk=False, res=r: self.print_reservation(res))
             card.btn_pay.clicked.connect(lambda chk=False, res=r: self.open_payments(res))
             card.btn_edit.clicked.connect(lambda chk=False, res=r: self.edit_reservation(res))
             card.btn_delete.clicked.connect(lambda chk=False, res=r: self.delete_reservation(res))
             
             self.cards_layout.insertWidget(self.cards_layout.count() - 1, card)
+
+    def print_reservation(self, r):
+        """Genera y abre el comprobante PDF de la reserva."""
+        from utils.pdf_generator import generate_reservation_pdf
+        import webbrowser
+        import tempfile
+
+        # Obtener configuración del negocio
+        config = self.db.get_config()
+        
+        # Obtener datos extendidos del cliente (necesitamos DNI y Email)
+        # r = (id, nombre, tel, inmueble, f_in, f_out, noches, val_d, total, final, adelanto, pendiente, prov, id_inm, creacion, wa)
+        client_id = self.db.get_reservation_client_id(r[0])
+        client_data = self.db.get_client_by_id(client_id)
+        
+        # Obtener datos de la propiedad (necesitamos dirección)
+        prop_data = self.db.get_property_by_id(r[13])
+
+        pdf_data = {
+            "id_reserva": r[0],
+            "business_name": config.get('business_name', 'Sistema de Reservas'),
+            "logo_path": config.get('logo_path'),
+            "cliente_nombre": r[1],
+            "cliente_doc": client_data[5] if client_data and len(client_data) > 5 else "S/D",
+            "cliente_tel": r[2],
+            "cliente_email": client_data[3] if client_data else "S/D",
+            "inmueble": r[3],
+            "direccion": f"{prop_data[3]}, {prop_data[4]}" if prop_data else "Consultar",
+            "fecha_ingreso": self.fmt_date(r[4]),
+            "fecha_egreso": self.fmt_date(r[5]),
+            "checkin_time": prop_data[13] if prop_data and len(prop_data) > 13 else "14:00",
+            "checkout_time": prop_data[14] if prop_data and len(prop_data) > 14 else "10:00",
+            "noches": r[6],
+            "costo_total": r[8],
+            "descuento": float(r[8]) - float(r[9]),
+            "costo_con_descuento": r[9],
+            "adelanto": r[10],
+            "pago_pendiente": r[11]
+        }
+
+        # Crear archivo temporal
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+            output_path = tmp.name
+        
+        try:
+            if generate_reservation_pdf(pdf_data, output_path):
+                # Abrir PDF con el visor predeterminado del sistema
+                if os.name == 'nt': # Windows
+                    os.startfile(output_path)
+                else: # Linux/Mac
+                    webbrowser.open(f"file://{output_path}")
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"No se pudo generar el PDF: {e}")
 
     def filter_cards(self):
         query = self.search_input.text().lower()
@@ -327,3 +384,9 @@ class ReservationListPage(QWidget):
         dialog = ReservationFormDialog(self, initial_data=initial_data)
         if dialog.exec():
             self.load_data()
+
+    def fmt_date(self, d):
+        """Formatea objetos date o datetime a string DD/MM/YYYY."""
+        if not d: return ""
+        try: return d.strftime("%d/%m/%Y")
+        except: return str(d)
