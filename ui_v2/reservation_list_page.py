@@ -164,6 +164,8 @@ class ReservationCard(QFrame):
         except: return str(d)
 
 class ReservationListPage(QWidget):
+    data_updated = Signal()
+    
     def __init__(self, parent=None):
         super().__init__(parent)
         self.db = Database()
@@ -361,21 +363,24 @@ class ReservationListPage(QWidget):
         dialog = PaymentDialog(self, reservation_id=r[0], client_name=r[1], pending_amount=float(r[11]))
         if dialog.exec():
             self.load_data()
+            self.data_updated.emit()
 
     def edit_reservation(self, r):
         dialog = ReservationFormDialog(self, reservation_id=r[0])
         if dialog.exec():
             self.load_data()
+            self.data_updated.emit()
 
     def delete_reservation(self, r):
         res_code = f"R-{str(r[0]).zfill(5)}"
-        reply = QMessageBox.question(self, "Confirmar Eliminación", 
+        reply = QMessageBox.question(self, "Confirmar Eliminación",
                                    f"¿Está seguro de eliminar la reserva {res_code} de {r[1]}?",
                                    QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
-        
+
         if reply == QMessageBox.Yes:
             if self.db.delete_reservation(r[0]):
                 self.load_data()
+                self.data_updated.emit()
                 QMessageBox.information(self, "Éxito", "Reserva eliminada correctamente.")
             else:
                 QMessageBox.warning(self, "Error", "No se pudo eliminar la reserva.")
@@ -384,6 +389,7 @@ class ReservationListPage(QWidget):
         dialog = ReservationFormDialog(self, initial_data=initial_data)
         if dialog.exec():
             self.load_data()
+            self.data_updated.emit()
 
     def fmt_date(self, d):
         """Formatea objetos date o datetime a string DD/MM/YYYY."""

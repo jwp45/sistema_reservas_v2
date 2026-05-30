@@ -1,6 +1,6 @@
 import sys
 from PySide6.QtWidgets import QApplication
-from ui_v2.main_window import MainWindowV2
+from ui_v2.main_window import MainWindow
 
 def main():
     app = QApplication(sys.argv)
@@ -62,7 +62,7 @@ def main():
     
     app.setStyle("Fusion")
     
-    window = MainWindowV2()
+    window = MainWindow()
     window.show()
     sys.exit(app.exec())
 

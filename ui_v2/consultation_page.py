@@ -154,6 +154,8 @@ class SearchInput(QLineEdit):
         """)
 
 class ConsultationPage(QWidget):
+    data_updated = Signal()
+    
     def __init__(self, reservation_controller=None, parent=None):
         super().__init__(parent)
         self.db = Database()
@@ -1130,4 +1132,4 @@ class ConsultationPage(QWidget):
         
         dialog = ReservationFormDialog(self, initial_data=initial_data)
         if dialog.exec():
-            pass
+            self.data_updated.emit()

@@ -4,7 +4,7 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                              QGridLayout, QScrollArea, QSpacerItem, QSizePolicy,
                              QStackedWidget)
 from PySide6.QtCore import Qt, QSize, QUrl, QByteArray
-from PySide6.QtGui import QFont, QIcon, QColor, QPainter, QBrush, QPen, QLinearGradient, QPixmap, QDesktopServices
+from PySide6.QtGui import QFont, QIcon, QColor, QPixmap, QDesktopServices
 import os
 from datetime import date, datetime
 
@@ -24,259 +24,11 @@ from ui_v2.property_list_page import PropertyListPage
 from ui_v2.config_page import ConfigPage
 from ui_v2.prospect_list_page import ProspectListPage
 from ui_v2.quotation_list_page import QuotationListPage
+from ui_v2.widgets import BarChartWidget, HorizontalBarChartWidget, SeasonStatCard, KPICard, SidebarButton
 from utils.whatsapp_sender import open_whatsapp_chat, get_whatsapp_url
 
-class BarChartWidget(QWidget):
-    def __init__(self, title, color, parent=None):
-        super().__init__(parent)
-        self.title = title
-        self.color = QColor(color)
-        self.data = [] # List of (label, value)
-        self.setMinimumHeight(250)
-        # Asegurar que el widget sea transparente para que se vean bien los bordes redondeados
-        self.setAttribute(Qt.WA_StyledBackground, True)
-        self.setStyleSheet("background: transparent;")
+class MainWindow(QMainWindow):
 
-    def set_data(self, data):
-        self.data = data
-        self.update()
-
-    def paintEvent(self, event):
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing)
-        
-        w = self.width()
-        h = self.height()
-        padding = 45
-        chart_w = w - (padding * 2)
-        chart_h = h - (padding * 2) - 30
-        
-        # Background
-        painter.setPen(Qt.NoPen)
-        painter.setBrush(QBrush(QColor("white")))
-        painter.drawRoundedRect(0, 0, w, h, 15, 15)
-        
-        # Title
-        painter.setPen(QPen(QColor("#2c3e50")))
-        painter.setFont(QFont("Segoe UI", 10, QFont.Bold))
-        painter.drawText(25, 30, self.title)
-        
-        if not self.data:
-            painter.setPen(QPen(QColor("#95a5a6")))
-            painter.setFont(QFont("Segoe UI", 10))
-            painter.drawText(self.rect(), Qt.AlignCenter, "Cargando datos...")
-            return
-
-        max_val = max([val for _, val in self.data]) if self.data else 1
-        if max_val == 0: max_val = 1
-        
-        bar_w = chart_w / len(self.data)
-        
-        # Draw horizontal grid lines
-        painter.setPen(QPen(QColor("#f0f2f5"), 1, Qt.SolidLine))
-        for j in range(5):
-            gy = h - padding - (j * chart_h / 4)
-            painter.drawLine(padding, gy, w - padding, gy)
-
-        for i, (label, val) in enumerate(self.data):
-            bar_height = (val / max_val) * chart_h
-            x = padding + (i * bar_w) + (bar_w * 0.15)
-            y = h - padding - bar_height
-            bw = bar_w * 0.7
-            
-            # Draw Bar with Gradient and Border
-            grad = QLinearGradient(x, y, x, y + bar_height)
-            grad.setColorAt(0, self.color)
-            grad.setColorAt(1, self.color.darker(120))
-            
-            painter.setBrush(QBrush(grad))
-            painter.setPen(Qt.NoPen)
-            painter.drawRoundedRect(x, y, bw, bar_height, 6, 6)
-            
-            # Label
-            painter.setPen(QPen(QColor("#7f8c8d")))
-            painter.setFont(QFont("Segoe UI", 8, QFont.Bold))
-            painter.drawText(x, h - padding + 10, bw, 20, Qt.AlignCenter, label)
-            
-            # Value
-            if val > 0:
-                painter.setPen(QPen(QColor("#2c3e50")))
-                painter.setFont(QFont("Segoe UI", 9, QFont.Bold))
-                val_text = f"{int(val/1000)}k" if val >= 1000 and "INGRESOS" in self.title else str(int(val))
-                painter.drawText(x, y - 18, bw, 15, Qt.AlignCenter, val_text)
-
-class SeasonStatCard(QFrame):
-    def __init__(self, title, color, parent=None):
-        super().__init__(parent)
-        self.title = title
-        self.color = QColor(color)
-        self.percentage = 0
-        self.center_text = "0"
-        self.show_pct = False
-        
-        self.setFixedHeight(160)
-        self.setStyleSheet(f"""
-            QFrame {{
-                background-color: white;
-                border-radius: 15px;
-                border: 1px solid #eef0f2;
-            }}
-            QFrame:hover {{
-                border: 1px solid {self.color.name()};
-            }}
-        """)
-        
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(20, 20, 20, 20)
-        layout.setSpacing(10)
-        
-        self.lbl_title = QLabel(title.upper())
-        self.lbl_title.setStyleSheet("color: #7f8c8d; font-size: 11px; font-weight: bold; border: none;")
-        layout.addWidget(self.lbl_title)
-        
-        val_layout = QHBoxLayout()
-        self.lbl_val = QLabel("0")
-        self.lbl_val.setStyleSheet("color: #2c3e50; font-size: 32px; font-weight: 800; border: none;")
-        self.lbl_unit = QLabel("DÍAS")
-        self.lbl_unit.setStyleSheet("color: #95a5a6; font-size: 12px; font-weight: bold; border: none; margin-top: 10px;")
-        val_layout.addWidget(self.lbl_val)
-        val_layout.addWidget(self.lbl_unit)
-        val_layout.addStretch()
-        layout.addLayout(val_layout)
-        
-        # Progress Bar
-        self.bar_bg = QFrame()
-        self.bar_bg.setFixedHeight(12)
-        self.bar_bg.setStyleSheet("background-color: #f0f2f5; border-radius: 6px; border: none;")
-        
-        self.bar_fill = QFrame(self.bar_bg)
-        self.bar_fill.setFixedHeight(12)
-        self.bar_fill.setStyleSheet(f"background-color: {self.color.name()}; border-radius: 6px; border: none;")
-        self.bar_fill.setFixedWidth(0)
-        
-        layout.addWidget(self.bar_bg)
-
-    def set_data(self, value, total, show_percentage=False):
-        try:
-            val_f = float(value) if value is not None else 0.0
-            tot_f = float(total) if total is not None else 0.0
-            
-            if tot_f > 0:
-                self.percentage = (val_f / tot_f) * 100
-            else:
-                self.percentage = 0
-            
-            self.show_pct = show_percentage
-            if show_percentage:
-                self.lbl_val.setText(f"{int(self.percentage)}%")
-                self.lbl_unit.setText("")
-            else:
-                self.lbl_val.setText(str(int(val_f)))
-                self.lbl_unit.setText("DÍAS")
-                
-            # Forzar actualizacion de geometria para obtener el ancho real
-            self.bar_bg.update()
-            
-            self._update_bar_width()
-        except Exception as e:
-            print(f"DEBUG ERROR in SeasonStatCard.set_data: {e}")
-
-    def _update_bar_width(self):
-        max_w = self.bar_bg.width()
-        if max_w > 5: # Un minimo razonable
-            target_w = int(max_w * (min(100, self.percentage) / 100.0))
-            self.bar_fill.setFixedWidth(max(0, target_w))
-        else:
-            # Si todavia no tiene ancho (ej: oculto al inicio), lo intentara en el resize
-            self.bar_fill.setFixedWidth(0)
-
-    def resizeEvent(self, event):
-        super().resizeEvent(event)
-        self._update_bar_width()
-
-class KPICard(QFrame):
-    def __init__(self, title, color, value="—", icon="📈", parent=None):
-        super().__init__(parent)
-        self.setObjectName("KPICard")
-        self.setCursor(Qt.PointingHandCursor)
-        self.color = QColor(color)
-        
-        self.layout = QHBoxLayout(self) # Horizontal to put icon and text side by side
-        self.layout.setContentsMargins(20, 20, 20, 20)
-        self.layout.setSpacing(20)
-        
-        # Icon Frame
-        self.icon_lbl = QLabel(icon)
-        self.icon_lbl.setFixedSize(60, 60)
-        self.icon_lbl.setAlignment(Qt.AlignCenter)
-        self.icon_lbl.setStyleSheet(f"""
-            background-color: {self.color.lighter(170).name()};
-            border-radius: 30px;
-            font-size: 28px;
-            border: none;
-        """)
-        self.layout.addWidget(self.icon_lbl)
-        
-        # Text Container
-        self.text_container = QWidget()
-        self.text_container.setStyleSheet("background: transparent; border: none;")
-        self.text_layout = QVBoxLayout(self.text_container)
-        self.text_layout.setContentsMargins(0, 0, 0, 0)
-        self.text_layout.setSpacing(2)
-        
-        self.lbl_title = QLabel(title)
-        self.lbl_title.setStyleSheet(f"color: #7f8c8d; font-size: 11px; font-weight: bold; border: none; text-transform: uppercase;")
-        
-        self.lbl_value = QLabel(value)
-        self.lbl_value.setStyleSheet(f"color: #2c3e50; font-size: 24px; font-weight: 800; border: none;")
-        
-        self.text_layout.addWidget(self.lbl_title)
-        self.text_layout.addWidget(self.lbl_value)
-        self.layout.addWidget(self.text_container)
-        
-        self.setStyleSheet(f"""
-            #KPICard {{
-                background-color: white;
-                border-radius: 15px;
-                border: 1px solid #eef0f2;
-            }}
-            #KPICard:hover {{
-                border: 1px solid {self.color.name()};
-                background-color: {self.color.lighter(195).name()};
-            }}
-        """)
-
-    def set_value(self, value):
-        self.lbl_value.setText(str(value))
-
-class SidebarButton(QPushButton):
-    def __init__(self, text, icon_path=None, parent=None):
-        super().__init__(text, parent)
-        self.setCheckable(True)
-        self.setFixedHeight(45)
-        self.setCursor(Qt.PointingHandCursor)
-        self.setStyleSheet("""
-            QPushButton {
-                text-align: left;
-                padding-left: 20px;
-                background-color: transparent;
-                border: none;
-                color: #ecf0f1;
-                font-size: 14px;
-                font-weight: 500;
-                border-radius: 5px;
-            }
-            QPushButton:hover {
-                background-color: #34495e;
-            }
-            QPushButton:checked {
-                background-color: #3498db;
-                color: white;
-                font-weight: bold;
-            }
-        """)
-
-class MainWindowV2(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Sistema de Reservas - NextGen")
@@ -411,10 +163,12 @@ class MainWindowV2(QMainWindow):
         
         # PAGINA 1: CONSULTAS
         self.page_consultation = ConsultationPage(self.reservation_controller)
+        self.page_consultation.data_updated.connect(self.refresh_dashboard)
         self.pages.addWidget(self.page_consultation)
 
         # PAGINA 2: RESERVAS
         self.page_reservas = ReservationListPage()
+        self.page_reservas.data_updated.connect(self.refresh_dashboard)
         self.pages.addWidget(self.page_reservas)
 
         # PAGINA 3: COTIZACIONES
@@ -458,11 +212,53 @@ class MainWindowV2(QMainWindow):
         header_layout = QHBoxLayout()
         self.lbl_welcome = QLabel("Resumen General")
         self.lbl_welcome.setStyleSheet("font-size: 26px; font-weight: bold; color: #2c3e50;")
+        
+        header_right = QHBoxLayout()
+        header_right.setSpacing(15)
+        
+        # Campana de Notificaciones
+        self.btn_notifications = QPushButton("🔔")
+        self.btn_notifications.setFixedSize(45, 45)
+        self.btn_notifications.setCursor(Qt.PointingHandCursor)
+        self.btn_notifications.setStyleSheet("""
+            QPushButton {
+                background-color: white;
+                border: 1px solid #eef0f2;
+                border-radius: 22px;
+                font-size: 20px;
+                padding-bottom: 2px;
+            }
+            QPushButton:hover {
+                background-color: #f8f9fa;
+                border: 1px solid #9b59b6;
+            }
+        """)
+        self.btn_notifications.clicked.connect(self.show_notifications_popup)
+        
+        # Badge de notificaciones (Número)
+        self.notif_badge = QLabel("0", self.btn_notifications)
+        self.notif_badge.setFixedSize(18, 18)
+        self.notif_badge.setAlignment(Qt.AlignCenter)
+        self.notif_badge.setStyleSheet("""
+            background-color: #e74c3c;
+            color: white;
+            border-radius: 9px;
+            font-size: 10px;
+            font-weight: bold;
+            border: 2px solid white;
+        """)
+        self.notif_badge.move(25, 5)
+        self.notif_badge.hide()
+
         self.lbl_date = QLabel(date.today().strftime("%A, %d de %B %Y"))
-        self.lbl_date.setStyleSheet("font-size: 14px; color: #7f8c8d;")
+        self.lbl_date.setStyleSheet("font-size: 14px; color: #7f8c8d; margin-left: 10px;")
+        
+        header_right.addWidget(self.btn_notifications)
+        header_right.addWidget(self.lbl_date)
+        
         header_layout.addWidget(self.lbl_welcome)
         header_layout.addStretch()
-        header_layout.addWidget(self.lbl_date)
+        header_layout.addLayout(header_right)
         self.content_layout.addLayout(header_layout)
         
         self.kpi_layout = QHBoxLayout()
@@ -479,41 +275,31 @@ class MainWindowV2(QMainWindow):
         self.kpi_layout.addWidget(self.kpi_revenue)
         self.content_layout.addLayout(self.kpi_layout)
         
-        self.movements_layout = QHBoxLayout()
-        self.movements_layout.setSpacing(30)
+        # Middle Section: Two Columns (Movements and Chart)
+        middle_layout = QHBoxLayout()
+        middle_layout.setSpacing(30)
+        
+        # Column 1: Upcoming Movements
+        movements_col = QVBoxLayout()
+        movements_col.setSpacing(20)
         self.card_checkin = self._create_movement_card("📥 PRÓXIMOS CHECK-IN", "#27ae60")
-        self.movements_layout.addWidget(self.card_checkin)
         self.card_checkout = self._create_movement_card("📤 PRÓXIMOS CHECK-OUT", "#2980b9")
-        self.movements_layout.addWidget(self.card_checkout)
-        self.content_layout.addLayout(self.movements_layout)
+        movements_col.addWidget(self.card_checkin)
+        movements_col.addWidget(self.card_checkout)
+        middle_layout.addLayout(movements_col, 1)
+        
+        # Column 2: Financial Chart (now vertical)
+        chart_col = QVBoxLayout()
+        self.chart_finance = BarChartWidget("RENDIMIENTO ECONÓMICO TEMPORADA", "#3498db")
+        self.chart_finance.setMinimumHeight(350) # Matching the height of the two movement cards
+        chart_col.addWidget(self.chart_finance)
+        middle_layout.addLayout(chart_col, 1)
+        
+        self.content_layout.addLayout(middle_layout)
 
-        # --- SECCIÓN: NOTIFICACIONES AUTOMÁTICAS ---
-        self.notif_section = QFrame()
-        self.notif_section.setStyleSheet("background-color: white; border-radius: 15px; border: 1px solid #eef0f2;")
-        self.notif_layout = QVBoxLayout(self.notif_section)
-        self.notif_layout.setContentsMargins(25, 25, 25, 25)
-        self.notif_layout.setSpacing(15)
-
-        notif_header = QHBoxLayout()
-        lbl_notif_title = QLabel("🤖 NOTIFICACIONES AUTOMÁTICAS DE HOY")
-        lbl_notif_title.setStyleSheet("font-size: 13px; font-weight: 800; color: #9b59b6; border: none;")
-        notif_header.addWidget(lbl_notif_title)
-        notif_header.addStretch()
-        self.notif_layout.addLayout(notif_header)
-
-        self.notif_list_container = QWidget()
-        self.notif_list_container.setStyleSheet("border: none;")
-        self.notif_list_layout = QVBoxLayout(self.notif_list_container)
-        self.notif_list_layout.setContentsMargins(0, 0, 0, 0)
-        self.notif_list_layout.setSpacing(10)
-        self.notif_layout.addWidget(self.notif_list_container)
-
-        self.content_layout.addWidget(self.notif_section)
-
-        # Seasonal Stats Section (ahora debajo de los movimientos)
+        # Seasonal Stats Section (Bottom full-width row)
         self.season_section = QFrame()
         self.season_section.setObjectName("SeasonSection")
-        self.season_section.setMinimumHeight(200)
         self.season_section.setStyleSheet("#SeasonSection { background: transparent; border: none; }")
         self.season_vbox = QVBoxLayout(self.season_section)
         self.season_vbox.setContentsMargins(0, 0, 0, 0)
@@ -523,6 +309,12 @@ class MainWindowV2(QMainWindow):
         self.lbl_season.setStyleSheet("font-size: 13px; font-weight: 800; color: #34495e; margin-bottom: 5px; border: none;")
         self.season_vbox.addWidget(self.lbl_season)
         
+        season_stats_container = QFrame()
+        season_stats_container.setStyleSheet("background-color: white; border-radius: 15px; border: 1px solid #eef0f2;")
+        season_stats_layout = QVBoxLayout(season_stats_container)
+        season_stats_layout.setContentsMargins(20, 20, 20, 20)
+        season_stats_layout.setSpacing(20)
+
         self.season_cards_layout = QHBoxLayout()
         self.season_cards_layout.setSpacing(20)
         self.donut_occupied = SeasonStatCard("Ocupación", "#3498db")
@@ -532,8 +324,9 @@ class MainWindowV2(QMainWindow):
         self.season_cards_layout.addWidget(self.donut_occupied)
         self.season_cards_layout.addWidget(self.donut_free)
         self.season_cards_layout.addWidget(self.donut_rented)
-        self.season_vbox.addLayout(self.season_cards_layout)
+        season_stats_layout.addLayout(self.season_cards_layout)
         
+        self.season_vbox.addWidget(season_stats_container)
         self.content_layout.addWidget(self.season_section)
 
         self.content_layout.addStretch()
@@ -612,7 +405,15 @@ class MainWindowV2(QMainWindow):
         self.kpi_revenue.set_value(f"${int(this_month_rev):,}".replace(",", "."))
 
         self._update_movements()
-        self._update_notifications()
+        
+        # Update Notifications Badge
+        notifs = self.db.get_todays_notifications()
+        count = len(notifs)
+        if count > 0:
+            self.notif_badge.setText(str(count))
+            self.notif_badge.show()
+        else:
+            self.notif_badge.hide()
 
         # Season Stats
         try:
@@ -630,176 +431,264 @@ class MainWindowV2(QMainWindow):
                 self.donut_occupied.set_data(season['occupied'], cap, show_percentage=True)
                 self.donut_free.set_data(season['free'], cap, show_percentage=False)
                 self.donut_rented.set_data(season['rented'], cap, show_percentage=False)
+
+                # Cargar datos para el gráfico financiero vertical (Apilado por Mes)
+                try:
+                    start_db = season['start'].strftime('%Y-%m-%d')
+                    end_db = season['end'].strftime('%Y-%m-%d')
+                    monthly_breakdown = self.db.get_monthly_financial_breakdown(start_db, end_db)
+                    if monthly_breakdown:
+                        fin_data = []
+                        meses_es = {
+                            "01": "Enero", "02": "Febrero", "03": "Marzo", "04": "Abril",
+                            "05": "Mayo", "06": "Junio", "07": "Julio", "08": "Agosto",
+                            "09": "Septiembre", "10": "Octubre", "11": "Noviembre", "12": "Diciembre"
+                        }
+                        for row in monthly_breakdown:
+                            mes_raw = row[0] # Formato YYYY-MM
+                            try:
+                                anio, mes_num = mes_raw.split("-")
+                                mes_nombre = meses_es.get(mes_num, mes_num)
+                                mes_label = f"{mes_nombre} {anio}"
+                            except:
+                                mes_label = mes_raw
+                                
+                            adelantos = float(row[1])
+                            cobrado_ci = float(row[2])
+                            pendientes = float(row[3])
+                            
+                            fin_data.append((
+                                mes_label, 
+                                [adelantos, cobrado_ci, pendientes], 
+                                ["#27ae60", "#3498db", "#f1c40f"]
+                            ))
+                        self.chart_finance.set_data(fin_data)
+                        self.chart_finance.title = "RENDIMIENTO DE TEMPORADA"
+                except Exception as e_fin:
+                    print(f"Error cargando finanzas mensual: {e_fin}")
             else:
                 self.season_section.setVisible(False)
         except Exception as e:
             self.season_section.setVisible(False)
 
-    def _update_notifications(self):
-        # Limpiar lista anterior
-        for i in reversed(range(self.notif_list_layout.count())):
-            self.notif_list_layout.itemAt(i).widget().setParent(None)
-            
-        notifs = self.db.get_todays_notifications()
+    def show_notifications_popup(self):
+        from PySide6.QtWidgets import QMenu, QWidgetAction
         
+        notifs = self.db.get_todays_notifications()
         if not notifs:
-            lbl = QLabel("No se han enviado notificaciones automáticas el día de hoy.")
-            lbl.setStyleSheet("color: #95a5a6; font-style: italic; border: none;")
-            self.notif_list_layout.addWidget(lbl)
             return
             
+        menu = QMenu(self)
+        menu.setStyleSheet("""
+            QMenu {
+                background-color: white;
+                border: 1px solid #eef0f2;
+                border-radius: 10px;
+                padding: 10px;
+            }
+        """)
+        
         for n in notifs:
-            item = QFrame()
-            item.setStyleSheet("background-color: #f8f9fa; border-radius: 8px; border: 1px solid #eef0f2;")
-            i_layout = QHBoxLayout(item)
+            item_widget = QFrame()
+            item_widget.setFixedWidth(350)
+            item_widget.setStyleSheet("background-color: #f8f9fa; border-radius: 8px; border: 1px solid #eef0f2; margin-bottom: 5px;")
+            i_layout = QVBoxLayout(item_widget)
             i_layout.setContentsMargins(15, 10, 15, 10)
+            i_layout.setSpacing(5)
             
-            # Hora
+            h_layout = QHBoxLayout()
             hora_str = n['fecha_envio_recordatorio'].strftime("%H:%M") if n['fecha_envio_recordatorio'] else "--:--"
             lbl_hora = QLabel(f"🕒 {hora_str}")
-            lbl_hora.setStyleSheet("font-weight: bold; color: #7f8c8d; border: none;")
-            i_layout.addWidget(lbl_hora)
+            lbl_hora.setStyleSheet("font-weight: bold; color: #7f8c8d; border: none; font-size: 11px;")
             
-            # Cliente e Inmueble
-            lbl_info = QLabel(f"Aviso enviado a <b>{n['cliente']}</b> por estadía en <b>{n['inmueble']}</b>")
-            lbl_info.setStyleSheet("color: #2c3e50; border: none;")
+            lbl_status = QLabel("✓ ENVIADO")
+            lbl_status.setStyleSheet("color: #27ae60; font-weight: bold; font-size: 10px; border: none;")
+            
+            h_layout.addWidget(lbl_hora)
+            h_layout.addStretch()
+            h_layout.addWidget(lbl_status)
+            i_layout.addLayout(h_layout)
+            
+            lbl_info = QLabel(f"Aviso enviado a <b>{n['cliente']}</b><br>Propiedad: <b>{n['inmueble']}</b>")
+            lbl_info.setStyleSheet("color: #2c3e50; border: none; font-size: 12px;")
+            lbl_info.setWordWrap(True)
             i_layout.addWidget(lbl_info)
             
-            i_layout.addStretch()
+            action = QWidgetAction(menu)
+            action.setDefaultWidget(item_widget)
+            menu.addAction(action)
             
-            # Estado
-            lbl_status = QLabel("  ✓ ENVIADO  ")
-            lbl_status.setStyleSheet("background-color: #eafaf1; color: #27ae60; font-weight: bold; font-size: 10px; border-radius: 4px; border: none;")
-            i_layout.addWidget(lbl_status)
-            
-            self.notif_list_layout.addWidget(item)
+        menu.exec(self.btn_notifications.mapToGlobal(self.btn_notifications.rect().bottomLeft()))
 
     def _update_movements(self):
         self._fill_movement_card(self.card_checkin, self.db.get_upcoming_checkins(), "No hay ingresos")
         self._fill_movement_card(self.card_checkout, self.db.get_upcoming_checkouts(), "No hay egresos")
 
-    def _fill_movement_card(self, card, data, empty_msg):
-        layout = card.layout()
-        if not layout: return
-        for i in reversed(range(2, layout.count())): # Skip top_line and title
-            item = layout.itemAt(i)
-            if item.widget(): item.widget().setParent(None)
-            
-        if not data:
-            lbl = QLabel(empty_msg)
-            lbl.setStyleSheet("color: #95a5a6; font-size: 14px; margin-top: 20px; border: none;")
-            lbl.setAlignment(Qt.AlignCenter)
-            layout.addWidget(lbl)
-            return
-
-        r = data[0]
-        container = QWidget()
-        container.setStyleSheet("background: transparent; border: none;")
-        c_layout = QVBoxLayout(container)
-        c_layout.setContentsMargins(0, 15, 0, 0)
-        c_layout.setSpacing(8)
-        
-        # Fecha destacada - Usamos la propiedad dinámica 'card_type'
-        card_type = card.property("card_type")
-        date_str = r[5] if card_type == "CHECK-IN" else r[6]
-        try:
-            dt = datetime.strptime(str(date_str), "%Y-%m-%d")
-            meses = ["", "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"]
-            display_date = f"{dt.day} {meses[dt.month]} {dt.year}"
-        except: display_date = str(date_str)
-
-        date_lbl = QLabel(display_date)
-        date_lbl.setStyleSheet("font-size: 24px; font-weight: 800; color: #2c3e50; border: none;")
-        
-        name = QLabel(str(r[1]).upper())
-        name.setStyleSheet("font-size: 16px; font-weight: bold; color: #34495e; border: none;")
-        
-        details_layout = QHBoxLayout()
-        details_layout.setSpacing(10)
-        
-        # Estilo profesional para el inmueble (tipo Badge/Tag)
-        prop = QLabel(f"  🏠 {r[4]}  ")
-        prop.setStyleSheet("""
-            font-size: 14px; 
-            font-weight: bold; 
-            color: #2c3e50; 
-            background-color: #f1f3f5; 
-            border-radius: 6px; 
-            border: 1px solid #e9ecef;
-            padding: 4px;
-        """)
-        
-        # Contenedor para el botón WhatsApp
-        phone_container = QWidget()
-        phone_container.setStyleSheet("background: transparent; border: none;")
-        phone_layout = QHBoxLayout(phone_container)
-        phone_layout.setContentsMargins(0, 0, 0, 0)
-        phone_layout.setSpacing(0)
-
-        client_name = str(r[1])
-        phone_val = str(r[2])
-        
-        btn_wa = QPushButton("💬 WhatsApp")
-        btn_wa.setToolTip(f"Enviar mensaje a {phone_val}")
-        btn_wa.setFixedSize(110, 32)
-        btn_wa.setCursor(Qt.PointingHandCursor)
-        btn_wa.setStyleSheet("""
-            QPushButton {
-                background-color: #25D366;
-                color: white;
-                border-radius: 6px;
-                border: none;
-                font-weight: bold;
-                font-size: 11px;
-                padding: 0 5px;
-            }
-            QPushButton:hover {
-                background-color: #128C7E;
-            }
-        """)
-        # Usar valores por defecto en el lambda para capturar el estado actual del bucle/función
-        btn_wa.clicked.connect(lambda checked=False, p=phone_val, n=client_name: 
-                               QDesktopServices.openUrl(QUrl(get_whatsapp_url(p, f"Hola {n}!"))))
-        
-        phone_layout.addWidget(btn_wa)
-        
-        details_layout.addWidget(prop)
-        details_layout.addStretch()
-        details_layout.addWidget(phone_container)
-        
-        c_layout.addWidget(date_lbl)
-        c_layout.addWidget(name)
-        c_layout.addLayout(details_layout)
-        layout.addWidget(container)
-
     def _create_movement_card(self, title, color):
         card = QFrame()
-        # Guardamos el tipo de tarjeta como propiedad para evitar errores de búsqueda
         card.setProperty("card_type", "CHECK-IN" if "CHECK-IN" in title else "CHECK-OUT")
+        card.setStyleSheet("background-color: white; border-radius: 15px; border: 1px solid #eef0f2;")
         
-        card.setStyleSheet(f"""
-            QFrame {{
-                background-color: white; 
-                border-radius: 15px; 
-                border: 1px solid #eef0f2;
-            }}
-        """)
         layout = QVBoxLayout(card)
-        layout.setContentsMargins(30, 30, 30, 30)
+        layout.setContentsMargins(20, 15, 20, 20)
+        layout.setSpacing(0)
         
-        # Header strip
+        # Top color strip
         top_line = QFrame()
-        top_line.setFixedHeight(5)
+        top_line.setFixedHeight(4)
         top_line.setStyleSheet(f"background-color: {color}; border-radius: 2px; border: none;")
         layout.addWidget(top_line)
         
+        # Header with Title and Navigation
+        header = QHBoxLayout()
+        header.setContentsMargins(0, 10, 0, 10)
+        
         lbl_title = QLabel(title)
-        lbl_title.setStyleSheet(f"color: {color}; font-weight: 800; font-size: 12px; border: none; text-transform: uppercase; margin-top: 10px;")
-        layout.addWidget(lbl_title)
+        lbl_title.setStyleSheet(f"color: {color}; font-weight: 800; font-size: 11px; border: none; text-transform: uppercase;")
+        header.addWidget(lbl_title)
+        header.addStretch()
+        
+        # Nav controls
+        nav_layout = QHBoxLayout()
+        nav_layout.setSpacing(5)
+        
+        btn_prev = QPushButton("◀")
+        btn_next = QPushButton("▶")
+        style_nav = """
+            QPushButton { 
+                background: #f8f9fa; border: 1px solid #eef0f2; border-radius: 4px; 
+                font-size: 10px; color: #7f8c8d; width: 22px; height: 22px; 
+            }
+            QPushButton:hover { background: #eef0f2; color: #2c3e50; }
+        """
+        btn_prev.setStyleSheet(style_nav)
+        btn_next.setStyleSheet(style_nav)
+        btn_prev.setCursor(Qt.PointingHandCursor)
+        btn_next.setCursor(Qt.PointingHandCursor)
+        
+        lbl_count = QLabel("0/0")
+        lbl_count.setStyleSheet("color: #95a5a6; font-size: 10px; font-weight: bold; border: none; margin-right: 5px;")
+        
+        nav_layout.addWidget(lbl_count)
+        nav_layout.addWidget(btn_prev)
+        nav_layout.addWidget(btn_next)
+        header.addLayout(nav_layout)
+        layout.addLayout(header)
+        
+        # Stacked widget for multiple entries
+        stack = QStackedWidget()
+        stack.setStyleSheet("background: transparent; border: none;")
+        layout.addWidget(stack)
+        
+        # Store refs in the card object for easy access in _fill
+        card.nav_prev = btn_prev
+        card.nav_next = btn_next
+        card.nav_count = lbl_count
+        card.stack = stack
+        
+        # Connect arrows using the specific stack and label of this card
+        btn_prev.clicked.connect(lambda: self._navigate_stack(stack, lbl_count, -1))
+        btn_next.clicked.connect(lambda: self._navigate_stack(stack, lbl_count, 1))
+        
         return card
 
-if __name__ == "__main__":
-    app = QApplication(sys.argv)
-    window = MainWindowV2()
-    window.show()
-    sys.exit(app.exec())
+    def _navigate_stack(self, stack, lbl, delta):
+        idx = stack.currentIndex()
+        count = stack.count()
+        if count <= 1: return
+        
+        new_idx = (idx + delta) % count
+        stack.setCurrentIndex(new_idx)
+        lbl.setText(f"{new_idx + 1}/{count}")
+
+    def _fill_movement_card(self, card, data, empty_msg):
+        stack = card.stack
+        lbl_count = card.nav_count
+        card_type = card.property("card_type")
+        
+        # Clear previous items
+        while stack.count() > 0:
+            w = stack.widget(0)
+            stack.removeWidget(w)
+            w.deleteLater()
+            
+        if not data:
+            lbl_count.setText("0/0")
+            card.nav_prev.hide()
+            card.nav_next.hide()
+            
+            empty_widget = QWidget()
+            l = QVBoxLayout(empty_widget)
+            lbl = QLabel(empty_msg)
+            lbl.setStyleSheet("color: #95a5a6; font-size: 13px; border: none;")
+            lbl.setAlignment(Qt.AlignCenter)
+            l.addWidget(lbl)
+            stack.addWidget(empty_widget)
+            return
+
+        card.nav_prev.setVisible(len(data) > 1)
+        card.nav_next.setVisible(len(data) > 1)
+        lbl_count.setText(f"1/{len(data)}")
+
+        for i, r in enumerate(data):
+            item_widget = QWidget()
+            item_widget.setStyleSheet("background: transparent; border: none;")
+            c_layout = QVBoxLayout(item_widget)
+            c_layout.setContentsMargins(0, 0, 0, 0)
+            c_layout.setSpacing(8)
+            
+            date_str = r[5] if card_type == "CHECK-IN" else r[6]
+            try:
+                dt = datetime.strptime(str(date_str), "%Y-%m-%d")
+                meses = ["", "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"]
+                display_date = f"{dt.day} {meses[dt.month]} {dt.year}"
+            except: display_date = str(date_str)
+
+            date_lbl = QLabel(display_date)
+            date_lbl.setStyleSheet("font-size: 22px; font-weight: 800; color: #2c3e50; border: none;")
+            
+            name = QLabel(str(r[1]).upper())
+            name.setStyleSheet("font-size: 15px; font-weight: bold; color: #34495e; border: none;")
+            
+            prop = QLabel(f"  🏠 {r[4]}  ")
+            prop.setStyleSheet("font-size: 13px; font-weight: bold; color: #2c3e50; background-color: #f1f3f5; border-radius: 6px; border: 1px solid #e9ecef; padding: 4px;")
+            
+            actions_layout = QHBoxLayout()
+            actions_layout.setSpacing(10)
+            
+            phone_val = str(r[2])
+            client_name = str(r[1])
+            res_id = r[0]
+            
+            btn_wa = QPushButton("💬 WhatsApp")
+            btn_wa.setFixedSize(100, 30)
+            btn_wa.setStyleSheet("QPushButton { background-color: #25D366; color: white; border-radius: 6px; font-weight: bold; font-size: 10px; }")
+            btn_wa.clicked.connect(lambda checked=False, p=phone_val, n=client_name: 
+                                   QDesktopServices.openUrl(QUrl(get_whatsapp_url(p, f"Hola {n}!"))))
+            
+            if card_type == "CHECK-IN":
+                btn_action = QPushButton("📥 Check-In")
+                btn_action.setStyleSheet("QPushButton { background-color: #3498db; color: white; border-radius: 6px; font-weight: bold; font-size: 10px; }")
+                btn_action.clicked.connect(lambda checked=False, rid=res_id: self._handle_checkin(rid))
+            else:
+                btn_action = QPushButton("📤 Check-Out")
+                btn_action.setStyleSheet("QPushButton { background-color: #e67e22; color: white; border-radius: 6px; font-weight: bold; font-size: 10px; }")
+                btn_action.clicked.connect(lambda checked=False, rid=res_id: self._handle_checkout(rid))
+                
+            btn_action.setFixedSize(90, 30)
+            btn_action.setCursor(Qt.PointingHandCursor)
+            
+            actions_layout.addWidget(btn_wa)
+            actions_layout.addWidget(btn_action)
+            actions_layout.addStretch()
+            
+            c_layout.addWidget(date_lbl)
+            c_layout.addWidget(name)
+            c_layout.addWidget(prop, 0, Qt.AlignLeft)
+            c_layout.addLayout(actions_layout)
+            
+            stack.addWidget(item_widget)
+        
+        stack.setCurrentIndex(0)
+
+        return card

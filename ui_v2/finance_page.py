@@ -7,6 +7,7 @@ from PySide6.QtGui import QColor, QFont, QPainter, QPen, QBrush, QLinearGradient
 from controllers.database import Database
 from datetime import datetime
 from ui_v2.payment_dialog import PaymentDialog
+from ui_v2.widgets import HorizontalBarChartWidget, SeasonStatCard
 
 # Re-using logic from dashboard for consistency
 class FinBarChart(QWidget):

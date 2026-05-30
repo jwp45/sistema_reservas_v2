@@ -144,6 +144,10 @@ class Database:
                 cursor.execute("ALTER TABLE reservas ADD COLUMN fecha_envio_recordatorio DATETIME DEFAULT NULL")
             if 'fecha_creacion' not in res_cols:
                 cursor.execute("ALTER TABLE reservas ADD COLUMN fecha_creacion DATETIME DEFAULT CURRENT_TIMESTAMP")
+            if 'checkin_status' not in res_cols:
+                cursor.execute("ALTER TABLE reservas ADD COLUMN checkin_status TINYINT(1) DEFAULT 0")
+            if 'checkout_status' not in res_cols:
+                cursor.execute("ALTER TABLE reservas ADD COLUMN checkout_status TINYINT(1) DEFAULT 0")
 
             # Asegurar columnas en inmuebles
             cursor.execute("DESCRIBE inmuebles")
@@ -649,6 +653,29 @@ class Database:
         finally:
             if cursor: cursor.close()
 
+    def get_season_financial_summary(self, start_date, end_date):
+        """Obtiene resumen de adelantos, ingresos totales y saldos de la temporada."""
+        cursor = None
+        try:
+            cursor = self.connection.cursor(dictionary=True, buffered=True)
+            query = """
+                SELECT 
+                    COALESCE(SUM(costo_con_descuento), 0) as total_esperado,
+                    COALESCE(SUM(adelanto), 0) as total_adelantos,
+                    COALESCE(SUM(pago_pendiente), 0) as total_pendientes,
+                    COALESCE(SUM(CASE WHEN checkin_status = 1 THEN pago_pendiente ELSE 0 END), 0) as total_cobrado_checkin,
+                    COALESCE(SUM(CASE WHEN checkin_status = 1 THEN costo_con_descuento ELSE adelanto END), 0) as total_real_recaudado
+                FROM reservas 
+                WHERE fecha_ingreso BETWEEN %s AND %s
+            """
+            cursor.execute(query, (start_date, end_date))
+            return cursor.fetchone()
+        except Exception as e:
+            print(f"Error en get_season_financial_summary: {e}")
+            return None
+        finally:
+            if cursor: cursor.close()
+
     def get_all_reservations(self):
         cursor = None
         try:
@@ -765,18 +792,48 @@ class Database:
                 return False
         return True
 
-    def get_upcoming_checkins(self, days=7):
+    def mark_checkin(self, reservation_id):
+        cursor = None
+        try:
+            cursor = self.connection.cursor(buffered=True)
+            # Al hacer checkin, el status cambia a 1. 
+            query = "UPDATE reservas SET checkin_status = 1 WHERE id_reserva = %s"
+            cursor.execute(query, (reservation_id,))
+            self.connection.commit()
+            return True
+        except Exception as e:
+            print(f"Error en mark_checkin: {e}")
+            return False
+        finally:
+            if cursor: cursor.close()
+
+    def mark_checkout(self, reservation_id):
+        cursor = None
+        try:
+            cursor = self.connection.cursor(buffered=True)
+            query = "UPDATE reservas SET checkout_status = 1 WHERE id_reserva = %s"
+            cursor.execute(query, (reservation_id,))
+            self.connection.commit()
+            return True
+        except Exception as e:
+            print(f"Error en mark_checkout: {e}")
+            return False
+        finally:
+            if cursor: cursor.close()
+
+    def get_upcoming_checkins(self):
+        """Obtiene todas las reservas pendientes de Check-In."""
         cursor = None
         try:
             cursor = self.connection.cursor(buffered=True)
             query = """SELECT r.id_reserva, CONCAT(c.nombre, ' ', c.apellido), c.telefono,
-                              r.provincia, i.nombre, r.fecha_ingreso, r.fecha_egreso
-                       FROM reservas r
-                       JOIN clientes c ON r.id_cliente = c.id_clientes
-                       JOIN inmuebles i ON r.id_inmueble = i.id_inmueble
-                       WHERE r.fecha_ingreso BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL %s DAY)
-                       ORDER BY r.fecha_ingreso"""
-            cursor.execute(query, (days,))
+                               i.provincia, i.nombre, r.fecha_ingreso, r.fecha_egreso
+                        FROM reservas r
+                        JOIN clientes c ON r.id_cliente = c.id_clientes
+                        JOIN inmuebles i ON r.id_inmueble = i.id_inmueble
+                        WHERE r.checkin_status = 0
+                        ORDER BY r.fecha_ingreso ASC"""
+            cursor.execute(query)
             return cursor.fetchall()
         except Exception as e:
             print(f"Error al obtener próximos ingresos: {e}")
@@ -784,18 +841,19 @@ class Database:
         finally:
             if cursor: cursor.close()
 
-    def get_upcoming_checkouts(self, days=7):
+    def get_upcoming_checkouts(self):
+        """Obtiene todas las estadías pendientes de Check-Out."""
         cursor = None
         try:
             cursor = self.connection.cursor(buffered=True)
             query = """SELECT r.id_reserva, CONCAT(c.nombre, ' ', c.apellido), c.telefono,
-                              r.provincia, i.nombre, r.fecha_ingreso, r.fecha_egreso
-                       FROM reservas r
-                       JOIN clientes c ON r.id_cliente = c.id_clientes
-                       JOIN inmuebles i ON r.id_inmueble = i.id_inmueble
-                       WHERE r.fecha_egreso BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL %s DAY)
-                       ORDER BY r.fecha_egreso"""
-            cursor.execute(query, (days,))
+                               i.provincia, i.nombre, r.fecha_ingreso, r.fecha_egreso
+                        FROM reservas r
+                        JOIN clientes c ON r.id_cliente = c.id_clientes
+                        JOIN inmuebles i ON r.id_inmueble = i.id_inmueble
+                        WHERE r.checkout_status = 0
+                        ORDER BY r.fecha_egreso ASC"""
+            cursor.execute(query)
             return cursor.fetchall()
         except Exception as e:
             print(f"Error al obtener próximos egresos: {e}")
@@ -891,6 +949,37 @@ class Database:
         except Exception as e:
             print(f"Error al reasignar datos del cliente: {e}")
             return False
+        finally:
+            if cursor: cursor.close()
+
+    def get_monthly_financial_breakdown(self, start_date=None, end_date=None):
+        """Obtiene el desglose mensual de adelantos, cobros y pendientes en un rango de fechas."""
+        cursor = None
+        try:
+            cursor = self.connection.cursor(buffered=True)
+            
+            where_clause = ""
+            params = []
+            if start_date and end_date:
+                where_clause = "WHERE fecha_ingreso BETWEEN %s AND %s"
+                params = [start_date, end_date]
+            
+            query = f"""
+                SELECT 
+                    DATE_FORMAT(fecha_ingreso, '%Y-%m') as mes, 
+                    SUM(adelanto) as adelantos,
+                    SUM(CASE WHEN checkin_status = 1 THEN pago_pendiente ELSE 0 END) as cobrado_checkin,
+                    SUM(CASE WHEN checkin_status = 0 THEN pago_pendiente ELSE 0 END) as pendiente
+                FROM reservas 
+                {where_clause}
+                GROUP BY mes
+                ORDER BY mes ASC
+            """
+            cursor.execute(query, tuple(params))
+            return cursor.fetchall()
+        except Exception as e:
+            print(f"Error en get_monthly_financial_breakdown: {e}")
+            return []
         finally:
             if cursor: cursor.close()
 
