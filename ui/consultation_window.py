@@ -316,7 +316,6 @@ class ConsultationWindow:
         
         elif mode == "whatsapp":
             if send_whatsapp_quotation(tel, nombre, data):
-                messagebox.showinfo("Éxito", "WhatsApp abierto con la cotización.", parent=self.window)
                 self._clear_lead_fields()
 
     def _clear_lead_fields(self):
@@ -610,18 +609,18 @@ class ConsultationWindow:
 
         tk.Label(self.info_card, text="🏠 DETALLES:", font=("Segoe UI", 9, "bold"), bg="#f8f9fa", fg="#2c3e50").pack(side=tk.LEFT, padx=(0, 10))
         
-        self.lbl_capacidad = tk.Label(self.info_card, text="Capacidad: —", bg="#f8f9fa", font=("Segoe UI", 10))
+        self.lbl_capacidad = tk.Label(self.info_card, text="Capacidad: —", bg="#f8f9fa", font=("Segoe UI", 11, "bold"), fg="#2c3e50")
         self.lbl_capacidad.pack(side=tk.LEFT, padx=15)
 
-        self.lbl_precio = tk.Label(self.info_card, text="Precio/Noche: —", bg="#f8f9fa", font=("Segoe UI", 10, "bold"), fg="#27ae60")
+        self.lbl_precio = tk.Label(self.info_card, text="Precio/Noche: —", bg="#f8f9fa", font=("Segoe UI", 12, "bold"), fg="#27ae60")
         self.lbl_precio.pack(side=tk.LEFT, padx=15)
 
         # Contenedor para la marquesina de ubicación
-        loc_container = tk.Frame(self.info_card, bg="#f8f9fa", width=300, height=25)
+        loc_container = tk.Frame(self.info_card, bg="#f8f9fa", width=350, height=30)
         loc_container.pack(side=tk.LEFT, padx=15, fill=tk.X, expand=True)
         loc_container.pack_propagate(False)
 
-        self.lbl_ubicacion = tk.Label(loc_container, text="Ubicación: —", bg="#f8f9fa", font=("Segoe UI", 9), fg="#7f8c8d", anchor="w")
+        self.lbl_ubicacion = tk.Label(loc_container, text="Ubicación: —", bg="#f8f9fa", font=("Segoe UI", 10, "bold"), fg="#34495e", anchor="w")
         self.lbl_ubicacion.pack(fill=tk.BOTH, expand=True)
 
         # Variables para la marquesina

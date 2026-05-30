@@ -1,5 +1,7 @@
 import urllib.parse
-import webbrowser
+import sys
+from PySide6.QtGui import QDesktopServices
+from PySide6.QtCore import QUrl
 
 def get_whatsapp_url(phone_number, message=""):
     """
@@ -14,15 +16,16 @@ def get_whatsapp_url(phone_number, message=""):
 
 def open_whatsapp_chat(phone_number, message=""):
     """
-    Limpia el número y abre el chat de WhatsApp en una nueva pestaña intentando traerla al frente.
+    Limpia el número y abre el chat de WhatsApp usando el método de QDesktopServices.
+    Este método es el mismo que usa el Dashboard y es el más fiable para traer el foco.
     """
     whatsapp_url = get_whatsapp_url(phone_number, message)
-    webbrowser.open_new_tab(whatsapp_url)
+    QDesktopServices.openUrl(QUrl(whatsapp_url))
     return True
 
-def send_whatsapp_quotation(phone_number, client_name, data):
+def send_whatsapp_quotation(phone_number, client_name, data, auto_open=True):
     """
-    Genera y abre un enlace de WhatsApp con el mensaje de cotización.
+    Genera un enlace de WhatsApp con el mensaje de cotización.
     """
     # Limpiar el número de teléfono (solo números)
     phone = "".join(filter(str.isdigit, str(phone_number)))
@@ -62,11 +65,11 @@ def send_whatsapp_quotation(phone_number, client_name, data):
     message += f"{dollar} *Promedio por noche:* {data.get('final_per_night', '')}\n\n"
     message += f"Quedo a tu disposición por cualquier consulta. Saludos! {smile}"
 
-    # Codificar el mensaje para la URL
-    encoded_message = urllib.parse.quote(message)
-    # Usar el endpoint de la API oficial que es más robusto para parámetros largos
-    whatsapp_url = f"https://api.whatsapp.com/send?phone={phone}&text={encoded_message}"
+    whatsapp_url = get_whatsapp_url(phone, message)
     
-    # Abrir en el navegador
-    webbrowser.open(whatsapp_url)
+    if not auto_open:
+        return whatsapp_url
+
+    # Usar QDesktopServices (igual que el Dashboard)
+    QDesktopServices.openUrl(QUrl(whatsapp_url))
     return True

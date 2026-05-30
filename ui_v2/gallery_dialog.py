@@ -1,12 +1,13 @@
 from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, 
                              QPushButton, QFrame, QMessageBox, QScrollArea, QWidget,
-                             QListWidget, QListWidgetItem, QCheckBox, QInputDialog)
-from PySide6.QtCore import Qt, QSize, QEvent
-from PySide6.QtGui import QPixmap, QColor, QFont, QKeyEvent, QAction, QShortcut, QKeySequence
+                             QListWidget, QListWidgetItem, QCheckBox, QInputDialog, QApplication)
+from PySide6.QtCore import Qt, QSize, QEvent, QUrl
+from PySide6.QtGui import QPixmap, QColor, QFont, QKeyEvent, QAction, QShortcut, QKeySequence, QDesktopServices
 import os
 import webbrowser
 import urllib.parse
 from utils.email_sender import send_gallery_email
+from utils.whatsapp_sender import get_whatsapp_url
 
 class GalleryDialog(QDialog):
     def __init__(self, parent=None, property_name="", image_paths=None, client_email=None, client_phone=None):
@@ -18,72 +19,31 @@ class GalleryDialog(QDialog):
         self.current_index = 0
         self.current_pixmap = None
         
-        self.setWindowTitle(f"Galería: {property_name}")
+        self.setWindowTitle(f"Galería - {property_name}")
         self.resize(1000, 800)
         self.setStyleSheet("background-color: #1a1a1a; color: white;")
         
         self.init_ui()
-        self.setup_shortcuts()
-        self.show_image()
+        if self.image_paths:
+            self.show_image()
 
     def init_ui(self):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
-        
-        # Header
-        header = QFrame()
-        header.setFixedHeight(80)
-        header.setStyleSheet("background-color: #2c3e50; border: none;")
-        h_layout = QHBoxLayout(header)
-        h_layout.setContentsMargins(30, 0, 30, 0)
-        
-        title_v = QVBoxLayout()
-        self.lbl_title = QLabel(self.property_name.upper())
-        self.lbl_title.setStyleSheet("font-size: 18px; font-weight: bold; color: white;")
-        self.lbl_count = QLabel("Imagen 0 de 0")
-        self.lbl_count.setStyleSheet("font-size: 12px; color: #bdc3c7;")
-        title_v.addWidget(self.lbl_title)
-        title_v.addWidget(self.lbl_count)
-        h_layout.addLayout(title_v)
-        
-        h_layout.addStretch()
-        
-        btn_close = QPushButton("X")
-        btn_close.setFixedSize(40, 40)
-        btn_close.setCursor(Qt.PointingHandCursor)
-        btn_close.setStyleSheet("background-color: transparent; font-size: 18px; font-weight: bold; color: #bdc3c7;")
-        btn_close.clicked.connect(self.close)
-        h_layout.addWidget(btn_close)
-        
-        layout.addWidget(header)
-        
-        # Main Viewer Area
+
+        # Viewer Area
         self.viewer_container = QWidget()
-        viewer_layout = QHBoxLayout(self.viewer_container)
-        viewer_layout.setContentsMargins(10, 10, 10, 10)
+        self.viewer_layout = QVBoxLayout(self.viewer_container)
+        self.viewer_layout.setContentsMargins(0, 0, 0, 0)
         
-        btn_prev = QPushButton("◀")
-        btn_prev.setFixedSize(60, 150)
-        btn_prev.setCursor(Qt.PointingHandCursor)
-        btn_prev.setStyleSheet("background-color: rgba(255,255,255,0.05); font-size: 30px; border: none; border-radius: 5px;")
-        btn_prev.clicked.connect(self.prev_image)
-        viewer_layout.addWidget(btn_prev)
-        
-        self.lbl_image = QLabel("CARGANDO...")
+        self.lbl_image = QLabel()
         self.lbl_image.setAlignment(Qt.AlignCenter)
-        self.lbl_image.setStyleSheet("border: none;")
-        viewer_layout.addWidget(self.lbl_image, 1)
-        
-        btn_next = QPushButton("▶")
-        btn_next.setFixedSize(60, 150)
-        btn_next.setCursor(Qt.PointingHandCursor)
-        btn_next.setStyleSheet("background-color: rgba(255,255,255,0.05); font-size: 30px; border: none; border-radius: 5px;")
-        btn_next.clicked.connect(self.next_image)
-        viewer_layout.addWidget(btn_next)
+        self.lbl_image.setStyleSheet("background-color: black; border: none;")
+        self.viewer_layout.addWidget(self.lbl_image)
         
         layout.addWidget(self.viewer_container, 1)
-        
+
         # Controls Bar
         controls = QFrame()
         controls.setFixedHeight(100)
@@ -91,79 +51,89 @@ class GalleryDialog(QDialog):
         c_layout = QHBoxLayout(controls)
         c_layout.setContentsMargins(30, 0, 30, 0)
         c_layout.setSpacing(20)
-        
+
         btn_wa = QPushButton("💬 ENVIAR POR WHATSAPP")
         btn_wa.setFixedHeight(45)
         btn_wa.setCursor(Qt.PointingHandCursor)
         btn_wa.setStyleSheet("""
             QPushButton {
-                background-color: #25D366; 
-                color: white; 
-                font-weight: bold; 
-                border-radius: 5px; 
+                background-color: #25D366;
+                color: white;
+                font-weight: bold;
+                border-radius: 5px;
                 padding: 0 20px;
                 font-size: 13px;
             }
             QPushButton:hover { background-color: #128C7E; }
         """)
         btn_wa.clicked.connect(self.share_wa)
-        c_layout.addWidget(btn_wa)
-        
-        btn_email = QPushButton("📧 COMPARTIR POR EMAIL")
+
+        btn_email = QPushButton("📧 ENVIAR POR EMAIL")
         btn_email.setFixedHeight(45)
         btn_email.setCursor(Qt.PointingHandCursor)
         btn_email.setStyleSheet("""
             QPushButton {
-                background-color: #3498db; 
-                color: white; 
-                font-weight: bold; 
-                border-radius: 5px; 
+                background-color: #3498db;
+                color: white;
+                font-weight: bold;
+                border-radius: 5px;
                 padding: 0 20px;
                 font-size: 13px;
             }
             QPushButton:hover { background-color: #2980b9; }
         """)
         btn_email.clicked.connect(self.share_email)
+
+        nav_layout = QHBoxLayout()
+        btn_prev = QPushButton("<")
+        btn_prev.setFixedSize(50, 50)
+        btn_prev.setCursor(Qt.PointingHandCursor)
+        btn_prev.setStyleSheet("background-color: #34495e; color: white; border-radius: 25px; font-size: 20px; font-weight: bold;")
+        btn_prev.clicked.connect(self.prev_image)
+
+        self.lbl_counter = QLabel("0 / 0")
+        self.lbl_counter.setStyleSheet("font-size: 16px; font-weight: bold; margin: 0 20px;")
+
+        btn_next = QPushButton(">")
+        btn_next.setFixedSize(50, 50)
+        btn_next.setCursor(Qt.PointingHandCursor)
+        btn_next.setStyleSheet(btn_prev.styleSheet())
+        btn_next.clicked.connect(self.next_image)
+
+        nav_layout.addWidget(btn_prev)
+        nav_layout.addWidget(self.lbl_counter)
+        nav_layout.addWidget(btn_next)
+
+        c_layout.addWidget(btn_wa)
         c_layout.addWidget(btn_email)
+        c_layout.addStretch()
+        c_layout.addLayout(nav_layout)
+        c_layout.addStretch()
         
+        btn_close = QPushButton("CERRAR")
+        btn_close.setFixedHeight(40)
+        btn_close.setStyleSheet("background-color: #e74c3c; color: white; padding: 0 20px; border-radius: 5px;")
+        btn_close.clicked.connect(self.close)
+        c_layout.addWidget(btn_close)
+
         layout.addWidget(controls)
 
-    def setup_shortcuts(self):
-        QShortcut(QKeySequence(Qt.Key_Left), self, self.prev_image)
-        QShortcut(QKeySequence(Qt.Key_Right), self, self.next_image)
-        QShortcut(QKeySequence(Qt.Key_Escape), self, self.close)
-
     def show_image(self):
-        if not self.image_paths:
-            self.lbl_image.setText("NO HAY IMÁGENES EN LA GALERÍA")
-            self.lbl_count.setText("0 de 0")
-            return
-            
-        path = self.image_paths[self.current_index]
-        self.lbl_count.setText(f"Imagen {self.current_index + 1} de {len(self.image_paths)}")
+        if not self.image_paths: return
         
+        path = self.image_paths[self.current_index]
         if os.path.exists(path):
             self.current_pixmap = QPixmap(path)
-            if self.current_pixmap.isNull():
-                self.lbl_image.setText(f"ERROR AL CARGAR:\n{os.path.basename(path)}")
-            else:
-                self.update_image_size()
-        else:
-            self.lbl_image.setText(f"ARCHIVO NO ENCONTRADO:\n{path}")
+            self.update_image_size()
+            self.lbl_counter.setText(f"{self.current_index + 1} / {len(self.image_paths)}")
 
     def update_image_size(self):
-        if self.current_pixmap and not self.current_pixmap.isNull():
-            # Get available size in the label
-            size = self.lbl_image.size()
-            if size.width() < 100 or size.height() < 100:
-                size = QSize(800, 600)
-            
-            scaled = self.current_pixmap.scaled(size, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        if self.current_pixmap:
+            scaled = self.current_pixmap.scaled(self.lbl_image.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation)
             self.lbl_image.setPixmap(scaled)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        # Re-scale image when window is resized, with a small delay to avoid too many updates
         self.update_image_size()
 
     def prev_image(self):
@@ -177,22 +147,35 @@ class GalleryDialog(QDialog):
             self.show_image()
 
     def share_wa(self):
+        if not self.image_paths: return
+        
+        # Intentar obtener teléfono de la instancia o del padre (ConsultationPage)
         phone = self.client_phone
+        if not phone and hasattr(self.parent(), 'edit_lead_phone'):
+            phone = self.parent().edit_lead_phone.text().strip()
+            
         if not phone:
             phone, ok = QInputDialog.getText(self, "WhatsApp", "Número del cliente (549...):")
             if not ok or not phone: return
             
-        clean_phone = "".join(filter(str.isdigit, phone))
-        if len(clean_phone) == 10: clean_phone = "549" + clean_phone
+        # Copiar imagen actual al portapapeles
+        current_path = self.image_paths[self.current_index]
+        if os.path.exists(current_path):
+            pixmap = QPixmap(current_path)
+            if not pixmap.isNull():
+                QApplication.clipboard().setPixmap(pixmap)
         
-        msg = urllib.parse.quote(f"¡Hola! Te comparto las fotos de *{self.property_name}*. ¡Quedo atento!")
-        webbrowser.open(f"https://wa.me/{clean_phone}?text={msg}")
-        QMessageBox.information(self, "WhatsApp", "Se abrió el chat. Adjunte las fotos manualmente.")
+        wa_url = get_whatsapp_url(phone, f"¡Hola! Te comparto esta foto de *{self.property_name}*.")
+        QDesktopServices.openUrl(QUrl(wa_url))
 
     def share_email(self):
         if not self.image_paths: return
         
+        # Intentar obtener email de la instancia o del padre
         email = self.client_email
+        if not email and hasattr(self.parent(), 'edit_lead_email'):
+            email = self.parent().edit_lead_email.text().strip()
+
         if not email:
             email, ok = QInputDialog.getText(self, "Email", "Email del destinatario:")
             if not ok or not email: return
@@ -205,4 +188,3 @@ class GalleryDialog(QDialog):
             QMessageBox.information(self, "Éxito", f"¡Email enviado a {email}!")
         else:
             QMessageBox.critical(self, "Error", "Fallo al enviar email. Verifique configuración SMTP.")
-

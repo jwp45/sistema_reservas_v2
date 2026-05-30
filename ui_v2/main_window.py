@@ -329,43 +329,43 @@ class MainWindowV2(QMainWindow):
         self.btn_dashboard.setChecked(True)
         self.btn_dashboard.clicked.connect(lambda: self.switch_page(0))
         self.sidebar_layout.addWidget(self.btn_dashboard)
-        
-        self.btn_reservas = SidebarButton("📅 Reservas")
-        self.btn_reservas.clicked.connect(lambda: self.switch_page(1))
-        self.sidebar_layout.addWidget(self.btn_reservas)
 
         self.btn_consultas = SidebarButton("🔍 Consultas")
-        self.btn_consultas.clicked.connect(lambda: self.switch_page(2))
+        self.btn_consultas.clicked.connect(lambda: self.switch_page(1))
         self.sidebar_layout.addWidget(self.btn_consultas)
+        
+        self.btn_reservas = SidebarButton("📅 Reservas")
+        self.btn_reservas.clicked.connect(lambda: self.switch_page(2))
+        self.sidebar_layout.addWidget(self.btn_reservas)
         
         self.btn_cotizaciones = SidebarButton("📑 Cotizaciones")
         self.btn_cotizaciones.clicked.connect(lambda: self.switch_page(3))
         self.sidebar_layout.addWidget(self.btn_cotizaciones)
 
-        self.btn_clientes = SidebarButton("👥 Clientes")
-        self.btn_clientes.clicked.connect(lambda: self.switch_page(4))
-        self.sidebar_layout.addWidget(self.btn_clientes)
-        
         self.btn_prospectos = SidebarButton("🎯 Leads (Prospectos)")
-        self.btn_prospectos.clicked.connect(lambda: self.switch_page(5))
+        self.btn_prospectos.clicked.connect(lambda: self.switch_page(4))
         self.sidebar_layout.addWidget(self.btn_prospectos)
 
-        self.btn_finanzas = SidebarButton("💰 Finanzas")
-        self.btn_finanzas.clicked.connect(lambda: self.switch_page(6))
-        self.sidebar_layout.addWidget(self.btn_finanzas)
-
+        self.btn_clientes = SidebarButton("👥 Clientes")
+        self.btn_clientes.clicked.connect(lambda: self.switch_page(5))
+        self.sidebar_layout.addWidget(self.btn_clientes)
+        
         self.btn_inmuebles = SidebarButton("🏠 Inmuebles")
-        self.btn_inmuebles.clicked.connect(lambda: self.switch_page(7))
+        self.btn_inmuebles.clicked.connect(lambda: self.switch_page(6))
         self.sidebar_layout.addWidget(self.btn_inmuebles)
+
+        self.btn_finanzas = SidebarButton("💰 Finanzas")
+        self.btn_finanzas.clicked.connect(lambda: self.switch_page(7))
+        self.sidebar_layout.addWidget(self.btn_finanzas)
 
         self.btn_config = SidebarButton("⚙️ Configuración")
         self.btn_config.clicked.connect(lambda: self.switch_page(8))
         self.sidebar_layout.addWidget(self.btn_config)
         
         # Agrupar botones para exclusividad
-        self.nav_buttons = [self.btn_dashboard, self.btn_reservas, self.btn_consultas, 
-                            self.btn_cotizaciones, self.btn_clientes, self.btn_prospectos, 
-                            self.btn_finanzas, self.btn_inmuebles, self.btn_config]
+        self.nav_buttons = [self.btn_dashboard, self.btn_consultas, self.btn_reservas, 
+                            self.btn_cotizaciones, self.btn_prospectos, self.btn_clientes, 
+                            self.btn_inmuebles, self.btn_finanzas, self.btn_config]
         
         self.sidebar_layout.addStretch()
         
@@ -383,33 +383,33 @@ class MainWindowV2(QMainWindow):
         # PAGINA 0: DASHBOARD
         self.setup_dashboard_page()
         
-        # PAGINA 1: RESERVAS
-        self.page_reservas = ReservationListPage()
-        self.pages.addWidget(self.page_reservas)
-
-        # PAGINA 2: CONSULTAS
+        # PAGINA 1: CONSULTAS
         self.page_consultation = ConsultationPage(self.reservation_controller)
         self.pages.addWidget(self.page_consultation)
+
+        # PAGINA 2: RESERVAS
+        self.page_reservas = ReservationListPage()
+        self.pages.addWidget(self.page_reservas)
 
         # PAGINA 3: COTIZACIONES
         self.page_cotizaciones = QuotationListPage()
         self.pages.addWidget(self.page_cotizaciones)
         
-        # PAGINA 4: CLIENTES
+        # PAGINA 4: PROSPECTOS
+        self.page_prospectos = ProspectListPage()
+        self.pages.addWidget(self.page_prospectos)
+
+        # PAGINA 5: CLIENTES
         self.page_clientes = ClientListPage()
         self.pages.addWidget(self.page_clientes)
         
-        # PAGINA 5: PROSPECTOS
-        self.page_prospectos = ProspectListPage()
-        self.pages.addWidget(self.page_prospectos)
-        
-        # PAGINA 6: FINANZAS
-        self.page_finanzas = FinancePage()
-        self.pages.addWidget(self.page_finanzas)
-
-        # PAGINA 7: INMUEBLES
+        # PAGINA 6: INMUEBLES
         self.page_inmuebles = PropertyListPage()
         self.pages.addWidget(self.page_inmuebles)
+
+        # PAGINA 7: FINANZAS
+        self.page_finanzas = FinancePage()
+        self.pages.addWidget(self.page_finanzas)
 
         # PAGINA 8: CONFIGURACIÓN
         self.page_config = ConfigPage()
@@ -503,13 +503,13 @@ class MainWindowV2(QMainWindow):
             btn.setChecked(i == index)
         
         if index == 0: self.refresh_dashboard()
-        elif index == 1: self.page_reservas.load_data()
-        elif index == 2: self.page_consultation.load_initial_data()
+        elif index == 1: self.page_consultation.load_initial_data()
+        elif index == 2: self.page_reservas.load_data()
         elif index == 3: self.page_cotizaciones.load_data()
-        elif index == 4: self.page_clientes.load_data()
-        elif index == 5: self.page_prospectos.load_data()
-        elif index == 6: self.page_finanzas.load_data()
-        elif index == 7: self.page_inmuebles.load_data()
+        elif index == 4: self.page_prospectos.load_data()
+        elif index == 5: self.page_clientes.load_data()
+        elif index == 6: self.page_inmuebles.load_data()
+        elif index == 7: self.page_finanzas.load_data()
         elif index == 8: self.page_config.load_config()
         
         # Siempre refrescar el logo por si cambió en config

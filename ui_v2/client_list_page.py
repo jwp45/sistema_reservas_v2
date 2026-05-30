@@ -7,7 +7,7 @@ from controllers.database import Database
 from ui_v2.client_form import ClientFormDialog
 import webbrowser
 import urllib.parse
-import os
+from utils.whatsapp_sender import open_whatsapp_chat
 
 class ClientCard(QFrame):
     def __init__(self, data, parent=None):
@@ -248,7 +248,7 @@ class ClientListPage(QWidget):
                 QMessageBox.warning(self, "Error", f"No se pudo eliminar: {e}")
 
     def send_wa(self, c):
-        phone = "".join(filter(str.isdigit, str(c[5])))
-        if len(phone) == 10: phone = "54" + phone
-        msg = urllib.parse.quote(f"Hola {c[2]}!")
-        webbrowser.open(f"https://api.whatsapp.com/send?phone={phone}&text={msg}")
+        # c = (id, doc, nom, ape, email, tel)
+        phone = str(c[5])
+        name = f"{c[2]} {c[3]}"
+        open_whatsapp_chat(phone, f"Hola {name}!")

@@ -83,21 +83,41 @@ class MainWindow:
                                  command=self.refresh_dashboard, style="Nav.TButton")
         btn_refresh.pack(fill=tk.X, padx=20, pady=(10, 5))
 
+        # Grupo: CONSULTAS
+        self._create_nav_group("🔍 CONSULTAS", [
+            ("Consultar Disponibilidad", self.show_consultation_tool),
+        ])
+
         # Grupo: RESERVAS
         self._create_nav_group("📅 RESERVAS", [
-            ("Consultar Disponibilidad", self.show_consultation_tool),
             ("Nueva Reserva", self.handle_new_reservation),
             ("Ver Reservas", self.handle_my_reservations),
+        ])
+
+        # Grupo: COTIZACIONES
+        self._create_nav_group("📑 COTIZACIONES", [
             ("Ver Cotizaciones", self.show_quotation_list),
         ])
 
-        # Grupo: GESTIÓN
-        self._create_nav_group("🏨 GESTIÓN", [
-            ("Ver Clientes", self.show_client_list),
+        # Grupo: LEADS
+        self._create_nav_group("🎯 LEADS", [
             ("Ver Prospectos (Leads)", self.show_prospect_list),
-            ("Ver Inmuebles", self.show_property_list),
+        ])
+
+        # Grupo: CLIENTES
+        self._create_nav_group("👥 CLIENTES", [
+            ("Ver Clientes", self.show_client_list),
             ("Registrar Cliente", self.handle_clients),
+        ])
+
+        # Grupo: INMUEBLES
+        self._create_nav_group("🏠 INMUEBLES", [
+            ("Ver Inmuebles", self.show_property_list),
             ("Registrar Inmueble", self.handle_properties),
+        ])
+
+        # Grupo: FINANZAS
+        self._create_nav_group("💰 FINANZAS", [
             ("Control Financiero", self.show_finance_dashboard),
         ])
 

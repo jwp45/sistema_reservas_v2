@@ -2,6 +2,7 @@ from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel,
                              QLineEdit, QPushButton, QFormLayout, QMessageBox, 
                              QFrame, QComboBox, QCheckBox, QScrollArea, QWidget, QGridLayout,
                              QListWidget, QListWidgetItem, QInputDialog)
+from ui_v2.calendar_dialog import ModernCalendarDialog
 from PySide6.QtCore import Qt, QDate
 from PySide6.QtGui import QPixmap, QColor
 import os
@@ -175,23 +176,45 @@ class ReservationFormDialog(QDialog):
         self.combo_prop.setFixedHeight(40)
         self.combo_prop.currentIndexChanged.connect(self.on_property_changed)
         
-        self.edit_checkin = QLineEdit()
-        self.edit_checkin.setPlaceholderText("DD/MM/YYYY")
-        self.edit_checkin.setFixedHeight(40)
-        self.edit_checkin.textChanged.connect(self.calculate_totals)
+        # Initialize date variables
+        self.d_in = QDate.currentDate()
+        self.d_out = QDate.currentDate().addDays(1)
+
+        date_btn_style = """
+            QPushButton {
+                background-color: white;
+                color: #2c3e50;
+                border: 1px solid #d1d8e0;
+                border-radius: 6px;
+                padding: 10px 12px;
+                font-weight: bold;
+                text-align: left;
+                font-size: 13px;
+            }
+            QPushButton:hover {
+                border: 2px solid #3498db;
+                background-color: #f7fbff;
+            }
+        """
+
+        self.btn_checkin = QPushButton(self.d_in.toString("dd/MM/yyyy"))
+        self.btn_checkin.setStyleSheet(date_btn_style)
+        self.btn_checkin.setFixedHeight(40)
+        self.btn_checkin.clicked.connect(lambda: self.open_calendar("in"))
         
-        self.edit_checkout = QLineEdit()
-        self.edit_checkout.setPlaceholderText("DD/MM/YYYY")
-        self.edit_checkout.setFixedHeight(40)
-        self.edit_checkout.textChanged.connect(self.calculate_totals)
+        self.btn_checkout = QPushButton(self.d_out.toString("dd/MM/yyyy"))
+        self.btn_checkout.setStyleSheet(date_btn_style)
+        self.btn_checkout.setFixedHeight(40)
+        self.btn_checkout.clicked.connect(lambda: self.open_calendar("out"))
         
         self.edit_people = QLineEdit()
         self.edit_price_day = QLineEdit()
         self.edit_price_day.textChanged.connect(self.calculate_totals)
+        self.edit_price_day.textChanged.connect(lambda: self.format_currency_input(self.edit_price_day))
         
         stay_form.addRow("Inmueble:", self.combo_prop)
-        stay_form.addRow("Fecha Ingreso:", self.edit_checkin)
-        stay_form.addRow("Fecha Egreso:", self.edit_checkout)
+        stay_form.addRow("Fecha Ingreso:", self.btn_checkin)
+        stay_form.addRow("Fecha Egreso:", self.btn_checkout)
         stay_form.addRow("Huéspedes:", self.edit_people)
         stay_form.addRow("Precio x Noche:", self.edit_price_day)
         
@@ -244,6 +267,7 @@ class ReservationFormDialog(QDialog):
         self.edit_discount = QLineEdit("0")
         self.edit_discount.setFixedWidth(120)
         self.edit_discount.textChanged.connect(self.calculate_totals)
+        self.edit_discount.textChanged.connect(lambda: self.format_currency_input(self.edit_discount))
         self.chk_perc = QCheckBox("%")
         self.chk_perc.setChecked(True)
         self.chk_perc.toggled.connect(self.calculate_totals)
@@ -259,6 +283,7 @@ class ReservationFormDialog(QDialog):
         adv_layout.addWidget(QLabel("💵 ADELANTO / SEÑA"))
         self.edit_advance = QLineEdit("0")
         self.edit_advance.textChanged.connect(self.calculate_totals)
+        self.edit_advance.textChanged.connect(lambda: self.format_currency_input(self.edit_advance))
         adv_layout.addWidget(self.edit_advance)
         fin_inputs.addWidget(adv_box)
         
@@ -356,6 +381,47 @@ class ReservationFormDialog(QDialog):
         
         self.main_layout.addWidget(btns)
 
+    def format_currency_input(self, widget):
+        text = widget.text().replace("$", "").replace(".", "").replace(" ", "")
+        if not text:
+            widget.setText("")
+            return
+        
+        try:
+            # Si el campo es descuento y es porcentaje, no aplicar formato moneda completo
+            if widget == self.edit_discount and self.chk_perc.isChecked():
+                return
+
+            val = int("".join(filter(str.isdigit, text)))
+            formatted = f"$ {val:,.0f}".replace(",", ".")
+            widget.blockSignals(True)
+            widget.setText(formatted)
+            widget.blockSignals(False)
+        except:
+            pass
+
+    def get_clean_value(self, widget):
+        text = widget.text().replace("$", "").replace(".", "").replace(" ", "")
+        try:
+            return float(text) if text else 0.0
+        except:
+            return 0.0
+
+    def open_calendar(self, target):
+        initial = self.d_in if target == "in" else self.d_out
+        dlg = ModernCalendarDialog(initial, self)
+        dlg.date_selected.connect(lambda d: self.on_date_selected(d, target))
+        dlg.exec()
+
+    def on_date_selected(self, q_date, target):
+        if target == "in":
+            self.d_in = q_date
+            self.btn_checkin.setText(q_date.toString("dd/MM/yyyy"))
+        else:
+            self.d_out = q_date
+            self.btn_checkout.setText(q_date.toString("dd/MM/yyyy"))
+        self.calculate_totals()
+
     def _create_section(self, title, accent_color="#3498db"):
         frame = QFrame()
         frame.setStyleSheet(f"""
@@ -396,8 +462,16 @@ class ReservationFormDialog(QDialog):
         if "inmueble" in d: 
             self.combo_prop.setCurrentText(d["inmueble"])
             self.lbl_prev_name.setText(d["inmueble"])
-        if "fecha_ingreso" in d: self.edit_checkin.setText(d["fecha_ingreso"])
-        if "fecha_egreso" in d: self.edit_checkout.setText(d["fecha_egreso"])
+        if "fecha_ingreso" in d: 
+            q_date = QDate.fromString(d["fecha_ingreso"], "dd/MM/yyyy")
+            if q_date.isValid(): 
+                self.d_in = q_date
+                self.btn_checkin.setText(q_date.toString("dd/MM/yyyy"))
+        if "fecha_egreso" in d: 
+            q_date = QDate.fromString(d["fecha_egreso"], "dd/MM/yyyy")
+            if q_date.isValid(): 
+                self.d_out = q_date
+                self.btn_checkout.setText(q_date.toString("dd/MM/yyyy"))
         if "cantidad_personas" in d: self.edit_people.setText(str(d["cantidad_personas"]))
         if "descuento" in d: self.edit_discount.setText(str(d["descuento"]))
         if "discount_is_percentage" in d: self.chk_perc.setChecked(d["discount_is_percentage"])
@@ -430,8 +504,12 @@ class ReservationFormDialog(QDialog):
             if prop_name in self.property_map:
                 self.update_preview_image(self.property_map[prop_name][8])
             
-            self.edit_checkin.setText(r[2].strftime("%d/%m/%Y") if isinstance(r[2], (date, datetime)) else str(r[2]))
-            self.edit_checkout.setText(r[3].strftime("%d/%m/%Y") if isinstance(r[3], (date, datetime)) else str(r[3]))
+            f_in = r[2] if isinstance(r[2], (date, datetime)) else datetime.strptime(str(r[2]), "%Y-%m-%d")
+            f_out = r[3] if isinstance(r[3], (date, datetime)) else datetime.strptime(str(r[3]), "%Y-%m-%d")
+            self.d_in = QDate(f_in.year, f_in.month, f_in.day)
+            self.d_out = QDate(f_out.year, f_out.month, f_out.day)
+            self.btn_checkin.setText(self.d_in.toString("dd/MM/yyyy"))
+            self.btn_checkout.setText(self.d_out.toString("dd/MM/yyyy"))
             self.edit_price_day.setText(str(r[4]))
             self.edit_advance.setText(str(r[8]))
             # Calculate discount
@@ -551,20 +629,20 @@ class ReservationFormDialog(QDialog):
 
     def calculate_totals(self):
         try:
-            val_dia = float(self.edit_price_day.text() or 0)
-            f_in = datetime.strptime(self.edit_checkin.text(), "%d/%m/%Y")
-            f_out = datetime.strptime(self.edit_checkout.text(), "%d/%m/%Y")
+            val_dia = self.get_clean_value(self.edit_price_day)
+            f_in = date(self.d_in.year(), self.d_in.month(), self.d_in.day())
+            f_out = date(self.d_out.year(), self.d_out.month(), self.d_out.day())
             noches = (f_out - f_in).days
             if noches <= 0: raise ValueError()
             
             total = noches * val_dia
-            disc = float(self.edit_discount.text() or 0)
+            disc = self.get_clean_value(self.edit_discount)
             if self.chk_perc.isChecked():
                 total_desc = total - (total * (disc / 100))
             else:
                 total_desc = total - disc
                 
-            adelanto = float(self.edit_advance.text() or 0)
+            adelanto = self.get_clean_value(self.edit_advance)
             pendiente = total_desc - adelanto
             
             self.lbl_nights.setText(f"{noches} noches")
@@ -580,10 +658,7 @@ class ReservationFormDialog(QDialog):
             self.btn_save.setEnabled(False)
 
     def save_reservation(self):
-        if not all([self.edit_doc.text(), self.edit_name.text(), self.edit_checkin.text(), self.edit_checkout.text()]):
-            QMessageBox.warning(self, "Faltan Datos", "Complete todos los campos obligatorios.")
-            return
-
+        # Campos básicos (DNI, Nombre ya son validados abajo)
         cid = self.edit_client_id.text().strip()
         doc = self.edit_doc.text().strip()
         nom = self.edit_name.text().strip()
@@ -591,6 +666,10 @@ class ReservationFormDialog(QDialog):
         email = self.edit_email.text().strip()
         tel = self.edit_phone.text().strip()
         
+        if not (doc and nom):
+            QMessageBox.warning(self, "Faltan Datos", "Complete al menos Documento y Nombre del huésped.")
+            return
+
         if not self.db.connect(): return
         cursor = self.db.connection.cursor()
         
@@ -606,23 +685,19 @@ class ReservationFormDialog(QDialog):
         p_name = self.combo_prop.currentText()
         id_inm = self.property_map[p_name][0]
         
-        try:
-            f_in = datetime.strptime(self.edit_checkin.text(), "%d/%m/%Y").date()
-            f_out = datetime.strptime(self.edit_checkout.text(), "%d/%m/%Y").date()
-        except:
-            QMessageBox.warning(self, "Error", "Formato de fecha inválido (DD/MM/YYYY)")
-            return
+        f_in = date(self.d_in.year(), self.d_in.month(), self.d_in.day())
+        f_out = date(self.d_out.year(), self.d_out.month(), self.d_out.day())
         
         noches = (f_out - f_in).days
-        val_dia = float(self.edit_price_day.text())
+        val_dia = self.get_clean_value(self.edit_price_day)
         total = noches * val_dia
-        disc = float(self.edit_discount.text() or 0)
+        disc = self.get_clean_value(self.edit_discount)
         if self.chk_perc.isChecked():
             costo_final = total - (total * (disc / 100))
         else:
             costo_final = total - disc
             
-        adelanto = float(self.edit_advance.text() or 0)
+        adelanto = self.get_clean_value(self.edit_advance)
         pendiente = costo_final - adelanto
         
         if self.reservation_id:

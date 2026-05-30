@@ -4,6 +4,7 @@ from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QColor, QFont, QPixmap
 from controllers.database import Database
+from utils.whatsapp_sender import open_whatsapp_chat
 import webbrowser
 import urllib.parse
 import os
@@ -250,7 +251,7 @@ class ProspectListPage(QWidget):
                 QMessageBox.critical(self, "Error", f"Fallo al convertir: {e}")
 
     def send_wa(self, p):
-        phone = "".join(filter(str.isdigit, str(p[5])))
-        if len(phone) == 10: phone = "54" + phone
-        msg = urllib.parse.quote(f"Hola {p[2]}!")
-        webbrowser.open(f"https://api.whatsapp.com/send?phone={phone}&text={msg}")
+        # p = (id, doc, nombre, apellido, email, tel, fecha_reg)
+        phone = str(p[5])
+        name = f"{p[2]} {p[3]}"
+        open_whatsapp_chat(phone, f"Hola {name}!")

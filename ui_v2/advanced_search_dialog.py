@@ -2,6 +2,7 @@ from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel,
                              QLineEdit, QPushButton, QTableWidget, QTableWidgetItem, 
                              QHeaderView, QFrame, QAbstractItemView, QMessageBox,
                              QComboBox, QSpinBox)
+from ui_v2.calendar_dialog import ModernCalendarDialog
 from PySide6.QtCore import Qt, QDate
 from PySide6.QtGui import QColor, QFont
 from controllers.database import Database
@@ -30,6 +31,10 @@ class AdvancedSearchDialog(QDialog):
         title.setStyleSheet("font-size: 18px; font-weight: bold; color: #2c3e50;")
         layout.addWidget(title)
 
+        # Initialize dates
+        self.d_in = QDate.currentDate()
+        self.d_out = QDate.currentDate().addDays(1)
+
         # Filter Panel
         filter_card = QFrame()
         filter_card.setStyleSheet("background-color: #f8f9fa; border-radius: 10px; border: 1px solid #e0e0e0;")
@@ -38,15 +43,35 @@ class AdvancedSearchDialog(QDialog):
         
         # Row 1: Dates
         row1 = QHBoxLayout()
+        
+        # Custom Style for Date Buttons
+        date_btn_style = """
+            QPushButton {
+                background-color: white;
+                color: #2c3e50;
+                border: 1px solid #d1d8e0;
+                border-radius: 6px;
+                padding: 8px 15px;
+                font-weight: bold;
+                text-align: left;
+            }
+            QPushButton:hover {
+                border: 1px solid #3498db;
+                background-color: #f7fbff;
+            }
+        """
+
         row1.addWidget(QLabel("Ingreso:"))
-        self.edit_in = QLineEdit()
-        self.edit_in.setPlaceholderText("DD/MM/YYYY")
-        row1.addWidget(self.edit_in)
+        self.btn_in = QPushButton(self.d_in.toString("dd/MM/yyyy"))
+        self.btn_in.setStyleSheet(date_btn_style)
+        self.btn_in.clicked.connect(lambda: self.open_calendar("in"))
+        row1.addWidget(self.btn_in)
         
         row1.addWidget(QLabel("Egreso:"))
-        self.edit_out = QLineEdit()
-        self.edit_out.setPlaceholderText("DD/MM/YYYY")
-        row1.addWidget(self.edit_out)
+        self.btn_out = QPushButton(self.d_out.toString("dd/MM/yyyy"))
+        self.btn_out.setStyleSheet(date_btn_style)
+        self.btn_out.clicked.connect(lambda: self.open_calendar("out"))
+        row1.addWidget(self.btn_out)
         
         row1.addWidget(QLabel("Personas:"))
         self.spin_people = QSpinBox()
@@ -113,13 +138,23 @@ class AdvancedSearchDialog(QDialog):
         self.combo_loc.addItem("Todas")
         self.combo_loc.addItems(locs)
 
+    def open_calendar(self, target):
+        initial = self.d_in if target == "in" else self.d_out
+        dlg = ModernCalendarDialog(initial, self)
+        dlg.date_selected.connect(lambda d: self.on_date_selected(d, target))
+        dlg.exec()
+
+    def on_date_selected(self, q_date, target):
+        if target == "in":
+            self.d_in = q_date
+            self.btn_in.setText(q_date.toString("dd/MM/yyyy"))
+        else:
+            self.d_out = q_date
+            self.btn_out.setText(q_date.toString("dd/MM/yyyy"))
+
     def perform_search(self):
-        try:
-            d_in = datetime.strptime(self.edit_in.text(), "%d/%m/%Y").date()
-            d_out = datetime.strptime(self.edit_out.text(), "%d/%m/%Y").date()
-        except:
-            QMessageBox.warning(self, "Error", "Formato de fecha inválido (DD/MM/YYYY)")
-            return
+        d_in = date(self.d_in.year(), self.d_in.month(), self.d_in.day())
+        d_out = date(self.d_out.year(), self.d_out.month(), self.d_out.day())
             
         if d_out <= d_in:
             QMessageBox.warning(self, "Error", "La fecha de egreso debe ser posterior.")
@@ -166,7 +201,7 @@ class AdvancedSearchDialog(QDialog):
         self.selected_property = next((p for p in props if p[0] == pid), None)
         
         self.selected_dates = {
-            "desde": datetime.strptime(self.edit_in.text(), "%d/%m/%Y").date(),
-            "hasta": datetime.strptime(self.edit_out.text(), "%d/%m/%Y").date()
+            "desde": date(self.d_in.year(), self.d_in.month(), self.d_in.day()),
+            "hasta": date(self.d_out.year(), self.d_out.month(), self.d_out.day())
         }
         self.accept()

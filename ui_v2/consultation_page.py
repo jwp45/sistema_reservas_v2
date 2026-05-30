@@ -6,11 +6,11 @@ from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
                              QScrollArea, QComboBox, QRadioButton, QButtonGroup,
                              QCheckBox, QMessageBox, QListWidget, QListWidgetItem,
                              QDialog, QInputDialog, QApplication)
-from PySide6.QtCore import Qt, QSize, Signal
-from PySide6.QtGui import QColor, QFont, QPalette, QPixmap
+from PySide6.QtCore import Qt, QSize, Signal, QTimer, QUrl
+from PySide6.QtGui import QColor, QFont, QPalette, QPixmap, QDesktopServices
 from controllers.database import Database
 from utils.email_sender import send_quotation_email
-from utils.whatsapp_sender import send_whatsapp_quotation
+from utils.whatsapp_sender import send_whatsapp_quotation, open_whatsapp_chat
 from ui_v2.reservation_form import ReservationFormDialog
 from ui_v2.advanced_search_dialog import AdvancedSearchDialog
 from ui_v2.gallery_dialog import GalleryDialog
@@ -171,6 +171,12 @@ class ConsultationPage(QWidget):
         self.now = date.today()
         self.view_year = self.now.year
         self.view_month = self.now.month
+        
+        # Marquee State
+        self.marquee_timer = QTimer(self)
+        self.marquee_timer.timeout.connect(self.update_marquee)
+        self.full_address = ""
+        self.display_address = ""
         
         self.init_ui()
         self.load_initial_data()
@@ -496,24 +502,32 @@ class ConsultationPage(QWidget):
 
         # Property Details Quick Info (Above Calendar)
         self.info_card = QFrame()
+        self.info_card.setFixedHeight(60)
         self.info_card.setStyleSheet("background-color: #f8f9fa; border-radius: 8px; border: 1px solid #e0e0e0;")
         info_layout = QHBoxLayout(self.info_card)
-        info_layout.setContentsMargins(15, 8, 15, 8)
+        info_layout.setContentsMargins(20, 0, 20, 0)
+        info_layout.setSpacing(25)
         
         self.lbl_capacidad = QLabel("👥 Capacidad: —")
-        self.lbl_capacidad.setStyleSheet("font-weight: bold; color: #2c3e50; border: none;")
+        self.lbl_capacidad.setStyleSheet("font-size: 15px; font-weight: bold; color: #2c3e50; border: none;")
         
         self.lbl_precio_noche = QLabel("💰 Precio/Noche: —")
-        self.lbl_precio_noche.setStyleSheet("font-weight: bold; color: #27ae60; border: none;")
+        self.lbl_precio_noche.setStyleSheet("font-size: 16px; font-weight: 800; color: #27ae60; border: none;")
+        
+        # Marquee Container for Address
+        addr_container = QWidget()
+        addr_container.setFixedWidth(350)
+        addr_container.setStyleSheet("border: none; background: transparent;")
+        addr_layout = QHBoxLayout(addr_container)
+        addr_layout.setContentsMargins(0, 0, 0, 0)
         
         self.lbl_ubicacion = QLabel("📍 Ubicación: —")
-        self.lbl_ubicacion.setStyleSheet("color: #7f8c8d; border: none;")
+        self.lbl_ubicacion.setStyleSheet("font-size: 14px; font-weight: bold; color: #34495e; border: none;")
+        addr_layout.addWidget(self.lbl_ubicacion)
         
         info_layout.addWidget(self.lbl_capacidad)
-        info_layout.addSpacing(20)
         info_layout.addWidget(self.lbl_precio_noche)
-        info_layout.addSpacing(20)
-        info_layout.addWidget(self.lbl_ubicacion)
+        info_layout.addWidget(addr_container)
         info_layout.addStretch()
         
         self.right_layout.addWidget(self.info_card)
@@ -650,10 +664,18 @@ class ConsultationPage(QWidget):
             p = self.selected_property
             self.lbl_prop_name.setText(f"Inmueble: {name}")
             
-            # Update Quick Info
-            self.lbl_capacidad.setText(f"👥 Capacidad: {p[2]} personas")
-            self.lbl_precio_noche.setText(f"💰 Precio/Noche: ${float(p[7]):,.0f}".replace(",", "."))
-            self.lbl_ubicacion.setText(f"📍 Ubicación: {p[3]}, {p[4]} ({p[5]})")
+            # Update Quick Info with bigger details
+            self.lbl_capacidad.setText(f"👥 Capacidad: {p[2]} pers.")
+            self.lbl_precio_noche.setText(f"💰 Precio/Noche: ${float(p[7]):,.2f}")
+            
+            # Marquee Address logic
+            self.full_address = f"📍 Ubicación: {p[3]}, {p[4]} ({p[5]}) "
+            if len(self.full_address) > 35:
+                self.display_address = self.full_address + " | "
+                self.marquee_timer.start(200)
+            else:
+                self.marquee_timer.stop()
+                self.lbl_ubicacion.setText(self.full_address)
             
             self.btn_view_gallery.setEnabled(True)
             self.btn_view_services.setEnabled(True)
@@ -665,9 +687,16 @@ class ConsultationPage(QWidget):
             self.lbl_capacidad.setText("👥 Capacidad: —")
             self.lbl_precio_noche.setText("💰 Precio/Noche: —")
             self.lbl_ubicacion.setText("📍 Ubicación: —")
+            self.marquee_timer.stop()
             self.btn_view_gallery.setEnabled(False)
             self.btn_view_services.setEnabled(False)
             self.draw_calendar()
+
+    def update_marquee(self):
+        # Rotate text for marquee effect
+        self.display_address = self.display_address[1:] + self.display_address[0]
+        # Show a slice of rotated text that fits the label
+        self.lbl_ubicacion.setText(self.display_address)
 
     def open_services(self):
         if not self.selected_property: return
@@ -693,8 +722,8 @@ class ConsultationPage(QWidget):
             
         dialog = GalleryDialog(self, property_name=self.selected_property[1], 
                                image_paths=image_paths,
-                               client_email=self.edit_lead_email.text(),
-                               client_phone=self.edit_lead_phone.text())
+                               client_email=self.edit_lead_email.text().strip(),
+                               client_phone=self.edit_lead_phone.text().strip())
         dialog.exec()
 
     def reset_selection(self):
@@ -1014,9 +1043,52 @@ class ConsultationPage(QWidget):
                 self.btn_send_wa.setEnabled(True)
                 QApplication.restoreOverrideCursor()
         else:
-            if send_whatsapp_quotation(tel, nombre, data):
-                QMessageBox.information(self, "Éxito", "WhatsApp abierto.")
+            QApplication.setOverrideCursor(Qt.WaitCursor)
+            self.btn_send_wa.setEnabled(False)
+            original_text = self.btn_send_wa.text()
+            self.btn_send_wa.setText("✅ PREPARANDO...")
+            QApplication.processEvents()
+            
+            has_image = False
+            # Copiar imagen principal al portapapeles si el check está activo
+            if self.check_include_photos.isChecked() and self.selected_property[8]:
+                path = self.selected_property[8]
+                if os.path.exists(path):
+                    pixmap = QPixmap(path)
+                    if not pixmap.isNull():
+                        QApplication.clipboard().setPixmap(pixmap)
+                        has_image = True
+
+            try:
+                # 1. Generar la URL pero NO abrirla todavía (auto_open=False)
+                whatsapp_url = send_whatsapp_quotation(tel, nombre, data, auto_open=False)
+                
+                # 2. Mostrar el aviso educativo (Modal para esperar al usuario)
+                msg = QMessageBox(self)
+                msg.setWindowTitle("Envío a WhatsApp")
+                msg.setIcon(QMessageBox.Information)
+                msg.setTextFormat(Qt.RichText) # Asegurar que acepte HTML
+                msg.setText("<b>¡Todo listo para enviar!</b>")
+                
+                info_text = "Hemos preparado el presupuesto y se abrirá el chat automáticamente.<br><br>"
+                if has_image:
+                    info_text += "<b>¡Atención! Copiamos la FOTO al portapapeles:</b><br>"
+                    info_text += "Cuando se abra el chat, simplemente presiona <b>Ctrl + V</b> para pegar la foto de la casa y enviarla junto al texto.<br><br>"
+                
+                info_text += "Haz clic en <b>ACEPTAR</b> para abrir el chat ahora."
+                
+                msg.setInformativeText(info_text)
+                msg.exec() # El código se detiene aquí hasta que el usuario cierre el mensaje
+                
+                # 3. RECIÉN AHORA abrimos el navegador con un mini delay para asegurar el foco
+                # Usamos el método exacto del Dashboard (QDesktopServices + QUrl)
+                QTimer.singleShot(200, lambda: QDesktopServices.openUrl(QUrl(whatsapp_url)))
                 self._clear_lead_fields()
+                
+            finally:
+                self.btn_send_wa.setText(original_text)
+                self.btn_send_wa.setEnabled(True)
+                QApplication.restoreOverrideCursor()
 
     def _clear_lead_fields(self):
         self.edit_lead_name.clear()
