@@ -58,8 +58,63 @@ def get_smtp_config():
         "smtp_password": os.environ.get("SMTP_PASSWORD", "xsyy xbcl rkoq esud"),
         "from_email": os.environ.get("FROM_EMAIL", "wolf10dra@gmail.com"),
         "business_name": "Sistema de Reservas",
-        "whatsapp_number": "5492236689548"
+        "whatsapp_number": "5492236689548",
+        "email_service_type": "SMTP",
+        "resend_api_key": None,
+        "resend_from_email": None
     }
+
+def send_resend_email(to_email, subject, html_content, attachments=None):
+    """Función genérica para enviar correos vía Resend API."""
+    config = get_smtp_config()
+    api_key = config.get("resend_api_key")
+    from_email = config.get("resend_from_email") or config.get("from_email")
+    business_name = config.get("business_name")
+
+    if not api_key:
+        print("Error: No hay API Key de Resend configurada.")
+        return False
+
+    payload = {
+        "from": f"{business_name} <{from_email}>",
+        "to": [to_email],
+        "subject": subject,
+        "html": html_content
+    }
+
+    if attachments:
+        import base64
+        resend_attachments = []
+        for path in attachments:
+            if os.path.exists(path):
+                try:
+                    with open(path, "rb") as f:
+                        content = base64.b64encode(f.read()).decode()
+                        resend_attachments.append({
+                            "filename": os.path.basename(path),
+                            "content": content
+                        })
+                except Exception as e:
+                    print(f"Error procesando adjunto para Resend: {e}")
+        if resend_attachments:
+            payload["attachments"] = resend_attachments
+
+    try:
+        req = urllib.request.Request(
+            "https://api.resend.com/emails",
+            data=json.dumps(payload).encode("utf-8"),
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36"
+            },
+            method="POST"
+        )
+        with urllib.request.urlopen(req) as response:
+            return True
+    except Exception as e:
+        print(f"Error Resend: {e}")
+        return False
 
 def optimize_image_for_email(source_path, max_size=(1024, 1024), quality=70):
     """Redimensiona y comprime una imagen para que sea apta para envío por email."""
@@ -82,18 +137,8 @@ def optimize_image_for_email(source_path, max_size=(1024, 1024), quality=70):
 
 def send_reservation_email(client_email, client_name, data):
     config = get_smtp_config()
-    smtp_user = config.get("smtp_user")
-    smtp_password = config.get("smtp_password")
-    smtp_server = config.get("smtp_server")
-    smtp_port = config.get("smtp_port")
-    from_email = config.get("from_email")
-
-    if not smtp_user or not smtp_password:
-        return False
-
     res_id = data.get('id_reserva', '—')
     res_code = f"R-{str(res_id).zfill(5)}" if str(res_id).isdigit() else res_id
-
     subject = f"Confirmación de Reserva {res_code} - {data.get('inmueble', '')}"
 
     body = f"""
@@ -123,6 +168,18 @@ def send_reservation_email(client_email, client_name, data):
     </html>
     """
 
+    if config.get("email_service_type") == "Resend":
+        return send_resend_email(client_email, subject, body)
+
+    smtp_user = config.get("smtp_user")
+    smtp_password = config.get("smtp_password")
+    smtp_server = config.get("smtp_server")
+    smtp_port = config.get("smtp_port")
+    from_email = config.get("from_email")
+
+    if not smtp_user or not smtp_password:
+        return False
+
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject
     msg["From"] = from_email
@@ -136,32 +193,18 @@ def send_reservation_email(client_email, client_name, data):
             server.sendmail(from_email, client_email, msg.as_string())
         return True
     except Exception as e:
-        print(f"Error al enviar correo: {e}")
+        print(f"Error al enviar correo SMTP: {e}")
         return False
 
 def send_quotation_email(client_email, client_name, data, image_paths=None):
     """Envía un correo de cotización formal con opción de adjuntar fotos."""
     config = get_smtp_config()
-    smtp_user = config.get("smtp_user")
-    smtp_password = config.get("smtp_password")
-    smtp_server = config.get("smtp_server")
-    smtp_port = config.get("smtp_port")
-    from_email = config.get("from_email")
-    business_name = config.get("business_name")
-    whatsapp = config.get("whatsapp_number")
-
-    if not smtp_user or not smtp_password:
-        return False
-
     quot_id = data.get('id', '—')
     quot_code = f"Q-{str(quot_id).zfill(5)}" if str(quot_id).isdigit() else quot_id
+    whatsapp = config.get("whatsapp_number")
+    business_name = config.get("business_name")
     
     subject = f"🏨 Presupuesto de Estadía {quot_code} - {data.get('inmueble', '')}"
-
-    msg = MIMEMultipart()
-    msg["Subject"] = subject
-    msg["From"] = from_email
-    msg["To"] = client_email
 
     body = f"""
     <html>
@@ -205,6 +248,23 @@ def send_quotation_email(client_email, client_name, data, image_paths=None):
     </body>
     </html>
     """
+
+    if config.get("email_service_type") == "Resend":
+        return send_resend_email(client_email, subject, body, attachments=image_paths)
+
+    smtp_user = config.get("smtp_user")
+    smtp_password = config.get("smtp_password")
+    smtp_server = config.get("smtp_server")
+    smtp_port = config.get("smtp_port")
+    from_email = config.get("from_email")
+
+    if not smtp_user or not smtp_password:
+        return False
+
+    msg = MIMEMultipart()
+    msg["Subject"] = subject
+    msg["From"] = from_email
+    msg["To"] = client_email
     msg.attach(MIMEText(body, "html"))
 
     # Adjuntar imágenes si existen
@@ -247,16 +307,8 @@ def send_quotation_email(client_email, client_name, data, image_paths=None):
 def send_gallery_email(client_email, property_name, image_paths):
     """Envía imágenes de la galería, dividiendo en varios correos si son muchas."""
     config = get_smtp_config()
-    smtp_user = config.get("smtp_user")
-    smtp_password = config.get("smtp_password")
-    smtp_server = config.get("smtp_server")
-    smtp_port = config.get("smtp_port")
-    from_email = config.get("from_email")
     business_name = config.get("business_name")
-
-    if not smtp_user or not smtp_password:
-        return False
-
+    
     # Dividir imágenes en lotes de 10 para evitar límites de tamaño/adjuntos
     batch_size = 10
     batches = [image_paths[i:i + batch_size] for i in range(0, len(image_paths), batch_size)]
@@ -268,11 +320,6 @@ def send_gallery_email(client_email, property_name, image_paths):
         part_num = part_idx + 1
         suffix = f" (Parte {part_num} de {total_parts})" if total_parts > 1 else ""
         subject = f"📸 Galería de Fotos: {property_name}{suffix} - {business_name}"
-
-        msg = MIMEMultipart()
-        msg["Subject"] = subject
-        msg["From"] = from_email
-        msg["To"] = client_email
 
         body = f"""
         <html>
@@ -286,6 +333,25 @@ def send_gallery_email(client_email, property_name, image_paths):
         </body>
         </html>
         """
+        
+        if config.get("email_service_type") == "Resend":
+            if not send_resend_email(client_email, subject, body, attachments=current_batch):
+                overall_success = False
+            continue
+
+        smtp_user = config.get("smtp_user")
+        smtp_password = config.get("smtp_password")
+        smtp_server = config.get("smtp_server")
+        smtp_port = config.get("smtp_port")
+        from_email = config.get("from_email")
+
+        if not smtp_user or not smtp_password:
+            return False
+
+        msg = MIMEMultipart()
+        msg["Subject"] = subject
+        msg["From"] = from_email
+        msg["To"] = client_email
         msg.attach(MIMEText(body, "html"))
 
         temp_attachments = []
@@ -328,16 +394,8 @@ def send_gallery_email(client_email, property_name, image_paths):
 def send_marketing_offer_email(client_email, client_name, data, contact_type='prospecto'):
     """Envía un correo de marketing mejorando la oferta original, diferenciando por tipo de cliente."""
     config = get_smtp_config()
-    smtp_user = config.get("smtp_user")
-    smtp_password = config.get("smtp_password")
-    smtp_server = config.get("smtp_server")
-    smtp_port = config.get("smtp_port")
-    from_email = config.get("from_email")
     business_name = config.get("business_name")
     whatsapp = config.get("whatsapp_number")
-
-    if not smtp_user or not smtp_password:
-        return False
 
     quot_id = data.get('id', '—')
     quot_code = f"Q-{str(quot_id).zfill(5)}" if str(quot_id).isdigit() else quot_id
@@ -388,6 +446,18 @@ def send_marketing_offer_email(client_email, client_name, data, contact_type='pr
     </html>
     """
 
+    if config.get("email_service_type") == "Resend":
+        return send_resend_email(client_email, subject, body)
+
+    smtp_user = config.get("smtp_user")
+    smtp_password = config.get("smtp_password")
+    smtp_server = config.get("smtp_server")
+    smtp_port = config.get("smtp_port")
+    from_email = config.get("from_email")
+
+    if not smtp_user or not smtp_password:
+        return False
+
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject
     msg["From"] = from_email
@@ -401,7 +471,7 @@ def send_marketing_offer_email(client_email, client_name, data, contact_type='pr
             server.sendmail(from_email, client_email, msg.as_string())
         return True
     except Exception as e:
-        print(f"Error al enviar correo: {e}")
+        print(f"Error al enviar correo marketing SMTP: {e}")
         return False
 
 def send_checkin_reminder_smtp(client_email, client_name, reservation_data):

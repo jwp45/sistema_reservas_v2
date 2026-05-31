@@ -405,7 +405,16 @@ class ConsultationPage(QWidget):
             QComboBox QAbstractItemView::item {
                 min-height: 35px;
                 padding-left: 10px;
+                color: #2c3e50;
                 background-color: white;
+            }
+            QComboBox QAbstractItemView::item:selected {
+                background-color: #3498db;
+                color: white;
+            }
+            QComboBox QAbstractItemView::item:hover {
+                background-color: #3498db;
+                color: white;
             }
         """
 

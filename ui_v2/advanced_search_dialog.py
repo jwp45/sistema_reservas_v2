@@ -37,7 +37,33 @@ class AdvancedSearchDialog(QDialog):
 
         # Filter Panel
         filter_card = QFrame()
-        filter_card.setStyleSheet("background-color: #f8f9fa; border-radius: 10px; border: 1px solid #e0e0e0;")
+        filter_card.setStyleSheet("""
+            QFrame { background-color: #f8f9fa; border-radius: 10px; border: 1px solid #e0e0e0; }
+            QComboBox { 
+                background-color: white; border: 1px solid #d1d8e0; border-radius: 6px; padding: 5px; color: #2c3e50;
+            }
+            QComboBox QAbstractItemView {
+                background-color: white;
+                color: #2c3e50;
+                selection-background-color: #3498db;
+                selection-color: white;
+                border: 1px solid #d1d8e0;
+                outline: 0px;
+            }
+            QComboBox QAbstractItemView::item {
+                padding: 8px;
+                background-color: white;
+                color: #2c3e50;
+            }
+            QComboBox QAbstractItemView::item:selected {
+                background-color: #3498db;
+                color: white;
+            }
+            QComboBox QAbstractItemView::item:hover {
+                background-color: #3498db;
+                color: white;
+            }
+        """)
         f_layout = QVBoxLayout(filter_card)
         f_layout.setContentsMargins(20, 20, 20, 20)
         

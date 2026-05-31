@@ -44,6 +44,27 @@ class ConfigPage(QWidget):
                 font-weight: bold;
             }
             QTabBar::tab:selected { background: white; color: #3498db; border: 1px solid #e0e0e0; border-bottom: none; }
+            QComboBox QAbstractItemView {
+                background-color: white;
+                color: #2c3e50;
+                selection-background-color: #3498db;
+                selection-color: white;
+                border: 1px solid #e0e0e0;
+                outline: 0px;
+            }
+            QComboBox QAbstractItemView::item {
+                padding: 8px;
+                background-color: white;
+                color: #2c3e50;
+            }
+            QComboBox QAbstractItemView::item:selected {
+                background-color: #3498db;
+                color: white;
+            }
+            QComboBox QAbstractItemView::item:hover {
+                background-color: #3498db;
+                color: white;
+            }
         """)
         
         # TAB 1: GENERAL
@@ -60,22 +81,39 @@ class ConfigPage(QWidget):
         scroll_layout.setContentsMargins(0, 0, 10, 0)
         scroll_layout.setSpacing(25)
 
-        # SMTP
-        group_email = QGroupBox("Configuración de Email (SMTP)")
+        # EMAIL SERVICE
+        group_email = QGroupBox("Configuración de Correo Electrónico")
         group_email.setStyleSheet("QGroupBox { font-weight: bold; font-size: 14px; color: #3498db; }")
         form_email = QFormLayout(group_email)
         form_email.setSpacing(15)
         form_email.setContentsMargins(20, 30, 20, 20)
+
+        self.combo_service = QComboBox()
+        self.combo_service.addItems(["SMTP", "Resend"])
+        self.combo_service.setFixedHeight(35)
+        self.combo_service.currentTextChanged.connect(self.toggle_email_fields)
+        form_email.addRow("Servicio Activo:", self.combo_service)
+
+        # SMTP Fields
         self.entries['smtp_server'] = self.create_input("smtp.gmail.com")
         self.entries['smtp_port'] = self.create_input("587")
         self.entries['smtp_user'] = self.create_input("tu-usuario@gmail.com")
         self.entries['smtp_password'] = self.create_input("", is_password=True)
         self.entries['from_email'] = self.create_input("tu-email@gmail.com")
-        form_email.addRow("Servidor SMTP:", self.entries['smtp_server'])
-        form_email.addRow("Puerto:", self.entries['smtp_port'])
-        form_email.addRow("Usuario SMTP:", self.entries['smtp_user'])
-        form_email.addRow("Contraseña SMTP:", self.entries['smtp_password'])
-        form_email.addRow("Email Remitente:", self.entries['from_email'])
+        
+        self.row_smtp_server = form_email.addRow("Servidor SMTP:", self.entries['smtp_server'])
+        self.row_smtp_port = form_email.addRow("Puerto:", self.entries['smtp_port'])
+        self.row_smtp_user = form_email.addRow("Usuario SMTP:", self.entries['smtp_user'])
+        self.row_smtp_pass = form_email.addRow("Contraseña SMTP:", self.entries['smtp_password'])
+        self.row_smtp_from = form_email.addRow("Email Remitente (SMTP):", self.entries['from_email'])
+
+        # Resend Fields
+        self.entries['resend_api_key'] = self.create_input("re_...", is_password=True)
+        self.entries['resend_from_email'] = self.create_input("tu-email@verificado.com")
+        
+        self.row_resend_key = form_email.addRow("Resend API Key:", self.entries['resend_api_key'])
+        self.row_resend_from = form_email.addRow("Email Remitente (Resend):", self.entries['resend_from_email'])
+
         scroll_layout.addWidget(group_email)
 
         # BUSINESS
@@ -125,24 +163,6 @@ class ConfigPage(QWidget):
         auto_layout = QVBoxLayout(tab_auto)
         auto_layout.setContentsMargins(25, 25, 25, 25)
         auto_layout.setSpacing(20)
-
-        group_resend = QGroupBox("Configuración de Resend (API)")
-        group_resend.setStyleSheet("QGroupBox { font-weight: bold; font-size: 14px; color: #9b59b6; }")
-        form_resend = QFormLayout(group_resend)
-        form_resend.setSpacing(15)
-        form_resend.setContentsMargins(20, 30, 20, 20)
-        
-        self.combo_service = QComboBox()
-        self.combo_service.addItems(["SMTP", "Resend"])
-        self.combo_service.setFixedHeight(35)
-        
-        self.entries['resend_api_key'] = self.create_input("re_...", is_password=True)
-        self.entries['resend_from_email'] = self.create_input("no-reply@tu-dominio.com")
-        
-        form_resend.addRow("Servicio de Email Activo:", self.combo_service)
-        form_resend.addRow("Resend API Key:", self.entries['resend_api_key'])
-        form_resend.addRow("Email Remitente Resend:", self.entries['resend_from_email'])
-        auto_layout.addWidget(group_resend)
 
         group_reminders = QGroupBox("Recordatorios Automáticos")
         group_reminders.setStyleSheet("QGroupBox { font-weight: bold; font-size: 14px; color: #e67e22; }")
@@ -266,6 +286,19 @@ class ConfigPage(QWidget):
         self.btn_save.clicked.connect(self.save_config)
         layout.addWidget(self.btn_save)
 
+    def toggle_email_fields(self, service):
+        is_smtp = service == "SMTP"
+        # SMTP Fields
+        self.entries['smtp_server'].setVisible(is_smtp)
+        self.entries['smtp_port'].setVisible(is_smtp)
+        self.entries['smtp_user'].setVisible(is_smtp)
+        self.entries['smtp_password'].setVisible(is_smtp)
+        self.entries['from_email'].setVisible(is_smtp)
+        
+        # Resend Fields
+        self.entries['resend_api_key'].setVisible(not is_smtp)
+        self.entries['resend_from_email'].setVisible(not is_smtp)
+
     def toggle_wa_fields(self, service):
         is_manual = service == "Manual"
         self.entries['whatsapp_api_key'].setVisible(not is_manual)
@@ -357,6 +390,7 @@ class ConfigPage(QWidget):
                     if field == 'email_service_type':
                         idx = self.combo_service.findText(str(value))
                         if idx >= 0: self.combo_service.setCurrentIndex(idx)
+                        self.toggle_email_fields(str(value)) # Ocultar/Mostrar según carga
                     
                     if field == 'reminder_days_before':
                         self.spin_days.setValue(int(value) if value is not None else 5)
@@ -388,16 +422,25 @@ class ConfigPage(QWidget):
         data['reminder_days_before'] = self.spin_days.value()
         
         # Validation
-        required = ["smtp_server", "smtp_port", "smtp_user", "smtp_password", "from_email", "business_name", "whatsapp_number"]
-        if not all(data[f] for f in required):
-            QMessageBox.warning(self, "Campos Incompletos", "Por favor, complete todos los campos obligatorios.")
+        required_general = ["business_name", "whatsapp_number"]
+        if not all(data[f] for f in required_general):
+            QMessageBox.warning(self, "Campos Incompletos", "Por favor, complete el nombre del negocio y WhatsApp.")
             return
 
-        try:
-            data['smtp_port'] = int(data['smtp_port'])
-        except:
-            QMessageBox.warning(self, "Error de Formato", "El puerto SMTP debe ser un número.")
-            return
+        if data['email_service_type'] == "SMTP":
+            smtp_req = ["smtp_server", "smtp_port", "smtp_user", "smtp_password", "from_email"]
+            if not all(data[f] for f in smtp_req):
+                QMessageBox.warning(self, "Campos Incompletos", "Para usar SMTP debe completar todos sus campos.")
+                return
+            try:
+                data['smtp_port'] = int(data['smtp_port'])
+            except:
+                QMessageBox.warning(self, "Error de Formato", "El puerto SMTP debe ser un número.")
+                return
+        else: # Resend
+            if not data['resend_api_key'] or not data['resend_from_email']:
+                QMessageBox.warning(self, "Campos Incompletos", "Para usar Resend debe completar la API Key y el Email remitente.")
+                return
 
         if self.db.connect():
             if self.db.update_config(data):

@@ -244,6 +244,27 @@ class ReservationListPage(QWidget):
             QComboBox { 
                 padding-left: 10px; border: 1px solid #d1d8e0; border-radius: 8px; background-color: white; min-width: 200px;
             }
+            QComboBox QAbstractItemView {
+                background-color: white;
+                color: #2c3e50;
+                selection-background-color: #3498db;
+                selection-color: white;
+                border: 1px solid #d1d8e0;
+                outline: 0px;
+            }
+            QComboBox QAbstractItemView::item {
+                padding: 8px;
+                background-color: white;
+                color: #2c3e50;
+            }
+            QComboBox QAbstractItemView::item:selected {
+                background-color: #3498db;
+                color: white;
+            }
+            QComboBox QAbstractItemView::item:hover {
+                background-color: #3498db;
+                color: white;
+            }
         """)
         self.combo_filter_type.currentIndexChanged.connect(self.filter_cards)
         filter_row.addWidget(self.combo_filter_type)

@@ -38,6 +38,27 @@ class PropertyFormDialog(QDialog):
                 background-color: white;
                 color: #2c3e50;
             }
+            QComboBox QAbstractItemView {
+                background-color: white;
+                color: #2c3e50;
+                selection-background-color: #3498db;
+                selection-color: white;
+                border: 1px solid #d1d8e0;
+                outline: 0px;
+            }
+            QComboBox QAbstractItemView::item {
+                padding: 8px;
+                background-color: white;
+                color: #2c3e50;
+            }
+            QComboBox QAbstractItemView::item:selected {
+                background-color: #3498db;
+                color: white;
+            }
+            QComboBox QAbstractItemView::item:hover {
+                background-color: #3498db;
+                color: white;
+            }
             QLineEdit:focus, QSpinBox:focus, QComboBox:focus {
                 border: 2px solid #3498db;
             }
