@@ -18,42 +18,56 @@ class AutomationController:
         if not config:
             return {"success": False, "message": "No se encontró la configuración del sistema."}
 
-        # Determinamos si el sistema tiene capacidad de envío (SMTP o Resend)
-        service_type = config.get('email_service_type', 'SMTP')
-        api_key = config.get('resend_api_key')
-        smtp_user = config.get('smtp_user')
-
-        can_send = (service_type == "Resend" and api_key) or (service_type == "SMTP" and smtp_user)
-        
-        if not can_send:
-            return {"success": False, "message": f"Servicio {service_type} no configurado correctamente."}
-
+        channel = config.get('channel_reminders', 'Both')
         days = config.get('reminder_days_before', 5)
-        print(f"DEBUG Automation: Buscando recordatorios para {days} días antes.")
-        pending = self.db.get_pending_reminders(days=days)
-        print(f"DEBUG Automation: Encontradas {len(pending)} reservas pendientes.")
         
+        pending = self.db.get_pending_reminders(days=days)
         if not pending:
             return {"success": True, "sent": 0, "message": "No hay recordatorios para procesar hoy."}
+
+        from utils.whatsapp_sender import send_whatsapp_reminder
 
         sent_count = 0
         error_count = 0
 
         for res in pending:
             client_email = res.get('cliente_email')
+            client_phone = res.get('cliente_telefono')
             client_name = f"{res.get('cliente_nombre')} {res.get('cliente_apellido')}"
             
-            if not client_email or "@" not in client_email:
-                print(f"DEBUG: Cliente {client_name} no tiene email válido.")
-                error_count += 1
-                continue
+            success_email = False
+            success_wa = False
 
-            # Enviar recordatorio usando la función híbrida
-            success = send_checkin_reminder(client_email, client_name, res)
-            
-            if success:
-                self.db.mark_reminder_sent(res.get('id_reserva'))
+            # 1. Enviar Email
+            if channel in ["Email", "Both"]:
+                if client_email and "@" in client_email:
+                    success_email = send_checkin_reminder(client_email, client_name, res)
+                else:
+                    print(f"DEBUG: Cliente {client_name} no tiene email válido para recordatorio.")
+
+            # 2. Enviar WhatsApp
+            if channel in ["WhatsApp", "Both"]:
+                if client_phone:
+                    # En automatización usamos auto_open=False para que no intente abrir navegador si es API
+                    # Si es 'Manual', devolverá la URL pero no hará nada en segundo plano (esperado)
+                    success_wa = send_whatsapp_reminder(client_phone, client_name, res, auto_open=False)
+                    
+                    # Si success_wa es un SID (string), lo guardamos para seguimiento
+                    if isinstance(success_wa, str) and not success_wa.startswith("http"):
+                        self.db.update_reservation_wa_status(res.get('id_reserva'), success_wa, 'sent')
+                else:
+                    print(f"DEBUG: Cliente {client_name} no tiene teléfono para recordatorio.")
+
+            # Marcamos como enviado si el canal preferido (o al menos uno si es Both) tuvo éxito
+            if channel == "Email" and success_email:
                 sent_count += 1
+                self.db.mark_reminder_sent(res.get('id_reserva'))
+            elif channel == "WhatsApp" and success_wa:
+                sent_count += 1
+                self.db.mark_reminder_sent(res.get('id_reserva'))
+            elif channel == "Both" and (success_email or success_wa):
+                sent_count += 1
+                self.db.mark_reminder_sent(res.get('id_reserva'))
             else:
                 error_count += 1
 
@@ -64,7 +78,7 @@ class AutomationController:
             "success": True, 
             "sent": sent_count, 
             "errors": error_count,
-            "message": f"Se enviaron {sent_count} recordatorios. Errores: {error_count}"
+            "message": f"Se procesaron {sent_count} recordatorios via {channel}."
         }
 
     def update_whatsapp_statuses(self):

@@ -299,15 +299,23 @@ class ConsultationPage(QWidget):
         self.left_layout.addWidget(self.check_include_photos)
 
         # Action Buttons
-        self.btn_send_email = QPushButton("📧 Enviar por Email")
-        self.btn_send_email.setStyleSheet("background-color: #3498db; color: white; font-weight: bold; height: 40px; border: none;")
-        self.btn_send_email.clicked.connect(self.send_email)
-        self.left_layout.addWidget(self.btn_send_email)
+        self.btn_send_auto = QPushButton("🚀 ENVIAR COTIZACIÓN")
+        self.btn_send_auto.setStyleSheet("background-color: #2c3e50; color: white; font-weight: bold; height: 50px; border-radius: 8px; font-size: 14px;")
+        self.btn_send_auto.clicked.connect(self.send_auto)
+        self.left_layout.addWidget(self.btn_send_auto)
 
-        self.btn_send_wa = QPushButton("✅ Enviar por WhatsApp")
-        self.btn_send_wa.setStyleSheet("background-color: #25D366; color: white; font-weight: bold; height: 40px; border: none;")
+        h_btn_layout = QHBoxLayout()
+        self.btn_send_email = QPushButton("📧 Email")
+        self.btn_send_email.setStyleSheet("background-color: #3498db; color: white; font-weight: bold; height: 35px; border: none; border-radius: 5px;")
+        self.btn_send_email.clicked.connect(self.send_email)
+        
+        self.btn_send_wa = QPushButton("✅ WhatsApp")
+        self.btn_send_wa.setStyleSheet("background-color: #25D366; color: white; font-weight: bold; height: 35px; border: none; border-radius: 5px;")
         self.btn_send_wa.clicked.connect(self.send_wa)
-        self.left_layout.addWidget(self.btn_send_wa)
+        
+        h_btn_layout.addWidget(self.btn_send_email)
+        h_btn_layout.addWidget(self.btn_send_wa)
+        self.left_layout.addLayout(h_btn_layout)
         
         self.btn_reserve = QPushButton("🚀 RESERVAR AHORA")
         self.btn_reserve.setEnabled(False)
@@ -932,6 +940,9 @@ class ConsultationPage(QWidget):
         self.edit_lead_phone.setText(str(data[5]) if data[5] else "")
         self.suggestion_list.hide()
 
+    def send_auto(self):
+        self._prepare_quotation(mode="auto")
+
     def send_wa(self):
         self._prepare_quotation(mode="whatsapp")
 
@@ -947,22 +958,34 @@ class ConsultationPage(QWidget):
             QMessageBox.critical(self, "Error", "Por favor completa Nombre y Teléfono.")
             return
             
-        if mode == "email":
-            if not email:
-                QMessageBox.critical(self, "Error", "Por favor completa el Email.")
-                return
-            
-            is_valid, error_msg = validate_email_format(email)
-            if not is_valid:
-                QMessageBox.critical(self, "Email Inválido", error_msg)
-                return
+        # Determine actual modes based on auto config if needed
+        modes_to_run = []
+        if mode == "auto":
+            config = self.db.get_config()
+            channel = config.get('channel_quotations', 'Both')
+            if channel == "Email": modes_to_run = ["email"]
+            elif channel == "WhatsApp": modes_to_run = ["whatsapp"]
+            else: modes_to_run = ["email", "whatsapp"]
+        else:
+            modes_to_run = [mode]
+
+        # Validations for each mode
+        for m in modes_to_run:
+            if m == "email":
+                if not email:
+                    QMessageBox.critical(self, "Error", "Por favor completa el Email.")
+                    return
+                is_valid, error_msg = validate_email_format(email)
+                if not is_valid:
+                    QMessageBox.critical(self, "Email Inválido", error_msg)
+                    return
 
         if not self.start_date or not self.end_date or not self.selected_property:
             QMessageBox.warning(self, "Atención", "Selecciona fechas e inmueble antes de enviar.")
             return
 
         # Photo selection logic
-        if self.check_include_photos.isChecked() and mode == "email":
+        if self.check_include_photos.isChecked() and "email" in modes_to_run:
             images = self.db.get_gallery_images(self.selected_property[0])
             all_paths = [img[1] for img in images if os.path.exists(img[1])]
             
@@ -975,15 +998,15 @@ class ConsultationPage(QWidget):
                 res = QMessageBox.question(self, "Sin fotos", "No hay fotos disponibles. ¿Enviar sin fotos?",
                                            QMessageBox.Yes | QMessageBox.No)
                 if res == QMessageBox.No: return
-                self._proceed_send_quotation(nombre, email, tel, [], mode=mode)
+                self._proceed_send_quotation(nombre, email, tel, [], modes=modes_to_run)
             else:
                 dialog = QuoteImageSelectorDialog(self, image_paths=all_paths)
                 if dialog.exec():
-                    self._proceed_send_quotation(nombre, email, tel, dialog.selected_paths, mode=mode)
+                    self._proceed_send_quotation(nombre, email, tel, dialog.selected_paths, modes=modes_to_run)
         else:
-            self._proceed_send_quotation(nombre, email, tel, [], mode=mode)
+            self._proceed_send_quotation(nombre, email, tel, [], modes=modes_to_run)
 
-    def _proceed_send_quotation(self, nombre, email, tel, selected_images, mode="email"):
+    def _proceed_send_quotation(self, nombre, email, tel, selected_images, modes=["email"]):
         if not self.db.connect(): return
 
         # 1. Register or find contact
@@ -1041,9 +1064,10 @@ class ConsultationPage(QWidget):
             "checkout_time": self.selected_property[14] if len(self.selected_property) > 14 else "10:00"
         }
 
-        if mode == "email":
-            # Visual Feedback: Cursor, Button state and Text
+        # 4. Handle multiple modes sequentially or together
+        if "email" in modes:
             QApplication.setOverrideCursor(Qt.WaitCursor)
+            self.btn_send_auto.setEnabled(False)
             self.btn_send_email.setEnabled(False)
             self.btn_send_wa.setEnabled(False)
             original_text = self.btn_send_email.text()
@@ -1053,20 +1077,24 @@ class ConsultationPage(QWidget):
             try:
                 success = send_quotation_email(email, nombre, data, image_paths=selected_images)
                 if success:
-                    QMessageBox.information(self, "Éxito", f"Cotización enviada a {email}")
-                    self._clear_lead_fields()
+                    if "whatsapp" not in modes:
+                        QMessageBox.information(self, "Éxito", f"Cotización enviada a {email}")
+                        self._clear_lead_fields()
                 else:
-                    QMessageBox.critical(self, "Error", "Fallo al enviar el email. Verifique configuración SMTP.")
+                    QMessageBox.critical(self, "Error", "Fallo al enviar el email. Verifique configuración.")
             finally:
                 # Restore UI state
                 self.btn_send_email.setText(original_text)
                 self.btn_send_email.setEnabled(True)
                 self.btn_send_wa.setEnabled(True)
+                self.btn_send_auto.setEnabled(True)
                 QApplication.restoreOverrideCursor()
-        else:
+
+        if "whatsapp" in modes:
             QApplication.setOverrideCursor(Qt.WaitCursor)
             self.btn_send_wa.setEnabled(False)
-            original_text = self.btn_send_wa.text()
+            self.btn_send_auto.setEnabled(False)
+            original_text_wa = self.btn_send_wa.text()
             self.btn_send_wa.setText("✅ PREPARANDO...")
             QApplication.processEvents()
             
@@ -1096,33 +1124,31 @@ class ConsultationPage(QWidget):
                     msg.setTextFormat(Qt.RichText) # Asegurar que acepte HTML
                     msg.setText("<b>¡Todo listo para enviar!</b>")
                     
-                    info_text = "Hemos preparado el presupuesto y se abrirá el chat automáticamente.<br><br>"
+                    info_text = "Hemos preparado el presupuesto para WhatsApp.<br><br>"
                     if has_image:
                         info_text += "<b>¡Atención! Copiamos la FOTO al portapapeles:</b><br>"
-                        info_text += "Cuando se abra el chat, simplemente presiona <b>Ctrl + V</b> para pegar la foto de la casa y enviarla junto al texto.<br><br>"
+                        info_text += "Presiona <b>Ctrl + V</b> en el chat para pegarla.<br><br>"
                     
                     info_text += "Haz clic en <b>ACEPTAR</b> para abrir el chat ahora."
-                    
                     msg.setInformativeText(info_text)
-
-                    # Agregar Checkbox para no volver a mostrar
                     cb = QCheckBox("No volver a mostrar este aviso")
                     msg.setCheckBox(cb)
+                    msg.exec()
 
-                    msg.exec() # El código se detiene aquí hasta que el usuario cierre el mensaje
-
-                    # Si el check está marcado, guardamos la preferencia
                     if cb.isChecked():
                         self.db.set_config_value('show_wa_educational_msg', 0)
                 
-                # 3. RECIÉN AHORA abrimos el navegador con un mini delay para asegurar el foco
-                # Usamos el método exacto del Dashboard (QDesktopServices + QUrl)
+                # 3. RECIÉN AHORA abrimos el navegador
                 QTimer.singleShot(200, lambda: QDesktopServices.openUrl(QUrl(whatsapp_url)))
-                self._clear_lead_fields()
                 
+                if "email" in modes:
+                    QMessageBox.information(self, "Proceso Completado", f"Se ha enviado el email y se abrirá el chat de WhatsApp.")
+                
+                self._clear_lead_fields()
             finally:
-                self.btn_send_wa.setText(original_text)
+                self.btn_send_wa.setText(original_text_wa)
                 self.btn_send_wa.setEnabled(True)
+                self.btn_send_auto.setEnabled(True)
                 QApplication.restoreOverrideCursor()
 
     def _clear_lead_fields(self):

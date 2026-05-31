@@ -248,3 +248,90 @@ def send_whatsapp_quotation(phone_number, client_name, data, auto_open=True):
     # Usar QDesktopServices (igual que el Dashboard)
     QDesktopServices.openUrl(QUrl(whatsapp_url))
     return True
+
+def send_whatsapp_reminder(phone_number, client_name, reservation_data, auto_open=True):
+    """
+    Envía un recordatorio de check-in vía WhatsApp.
+    """
+    from utils.email_sender import get_smtp_config
+    config = get_smtp_config()
+    business_name = config.get('business_name', 'Sistema de Reservas')
+    
+    # Emojis
+    wave = "\U0001F44B"
+    smile = "\U0001F60A"
+    pin = "\U0001F4CD"
+    calendar = "\U0001F4C5"
+    money = "\U0001F4B0"
+    
+    message = f"¡Hola *{client_name}*! {wave}\n\n"
+    message += f"¡Estamos muy emocionados por recibirte! Queremos recordarte que todo está listo para tu llegada el próximo *{reservation_data.get('fecha_ingreso')}*.\n\n"
+    
+    message += f"*DETALLES DE TU LLEGADA:*\n"
+    message += f"📍 *Inmueble:* {reservation_data.get('inmueble_nombre')}\n"
+    message += f"{calendar} *Fecha Ingreso:* {reservation_data.get('fecha_ingreso')} (a las {reservation_data.get('checkin_time', '14:00')} hs)\n"
+    message += f"🕒 *Fecha Egreso:* {reservation_data.get('fecha_egreso')} (a las {reservation_data.get('checkout_time', '10:00')} hs)\n\n"
+    
+    message += f"🏠 *Dirección:* {reservation_data.get('inmueble_direccion')}, {reservation_data.get('inmueble_localidad')}\n"
+    message += f"📍 *Ver en Google Maps:* https://www.google.com/maps/search/?api=1&query={reservation_data.get('inmueble_direccion').replace(' ', '+')}+{reservation_data.get('inmueble_localidad').replace(' ', '+')}\n\n"
+    
+    if float(reservation_data.get('pago_pendiente', 0)) > 0:
+        message += f"{money} *Saldo Pendiente:* ${float(reservation_data.get('pago_pendiente', 0)):,.2f}\n\n"
+    
+    message += f"¡Nos vemos pronto! {smile}\n"
+    message += f"_{business_name}_"
+
+    service_type = config.get('whatsapp_service_type', 'Manual')
+    if service_type == "Manual":
+        if not auto_open: return False # En automatización no podemos enviar manual
+        return open_whatsapp_chat(phone_number, message)
+    
+    # Si es API, usamos la misma lógica que confirmation (podríamos refactorizar pero por ahora es más seguro así)
+    api_key = config.get('whatsapp_api_key')
+    acc_id = config.get('whatsapp_acc_id')
+    api_url = config.get('whatsapp_api_url')
+    clean_phone = format_argentina_phone(phone_number)
+    
+    try:
+        url = ""
+        payload = {}
+        headers = {}
+        data_encoded = b""
+
+        if service_type == "Twilio":
+            tw_from = f"whatsapp:+{str(config.get('whatsapp_number', '')).strip().replace('+', '')}"
+            tw_to = f"whatsapp:+{clean_phone}"
+            import base64
+            auth_b64 = base64.b64encode(f"{acc_id}:{api_key}".encode()).decode()
+            url = f"https://api.twilio.com/2010-04-01/Accounts/{acc_id}/Messages.json"
+            payload = {"To": tw_to, "From": tw_from, "Body": message}
+            data_encoded = urllib.parse.urlencode(payload).encode('utf-8')
+            headers = {"Authorization": f"Basic {auth_b64}", "Content-Type": "application/x-www-form-urlencoded"}
+        elif service_type == "Meta Cloud API":
+            url = f"https://graph.facebook.com/v18.0/{acc_id}/messages"
+            payload = {"messaging_product": "whatsapp", "to": clean_phone, "type": "text", "text": {"body": message}}
+            data_encoded = json.dumps(payload).encode()
+            headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+        # ... otros servicios ...
+        else:
+            if not auto_open: return False
+            return open_whatsapp_chat(phone_number, message)
+
+        req = urllib.request.Request(url, data=data_encoded, headers=headers, method="POST")
+        with urllib.request.urlopen(req) as response:
+            res_raw = response.read().decode()
+            res_json = json.loads(res_raw)
+            
+            # Extraer SID según el proveedor
+            sid = None
+            if service_type == "Twilio":
+                sid = res_json.get("sid")
+            elif service_type == "Meta Cloud API":
+                messages = res_json.get("messages", [])
+                if messages: sid = messages[0].get("id")
+            
+            return sid if sid else True
+    except Exception as e:
+        print(f"Error en envío recordatorio WhatsApp ({service_type}): {e}")
+        if not auto_open: return False
+        return open_whatsapp_chat(phone_number, message)

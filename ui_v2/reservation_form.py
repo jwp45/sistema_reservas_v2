@@ -791,33 +791,48 @@ class ReservationFormDialog(QDialog):
             
             QMessageBox.information(self, "Éxito", "Reserva guardada correctamente.")
             
-            # --- ENVÍO DE EMAIL AUTOMÁTICO ---
-            # Solo enviamos email automático si es una reserva NUEVA (no edición)
+            # --- ENVÍO AUTOMÁTICO SEGÚN CONFIGURACIÓN ---
+            # Solo para reservas NUEVAS
             if not self.initial_data.get('id_reserva'):
-                try:
-                    email_data = {
-                        "id_reserva": rid, 
-                        "inmueble": p_name, 
-                        "fecha_ingreso": f_in.strftime("%d/%m/%Y"),
-                        "fecha_egreso": f_out.strftime("%d/%m/%Y"), 
-                        "noches": noches, 
-                        "costo_con_descuento": costo_final, 
-                        "adelanto": adelanto, 
-                        "pago_pendiente": pendiente,
-                        "checkin_time": self.property_map[p_name][13] if len(self.property_map[p_name]) > 13 else "14:00",
-                        "checkout_time": self.property_map[p_name][14] if len(self.property_map[p_name]) > 14 else "10:00",
-                        "ubicacion": f"{self.property_map[p_name][3]}, {self.property_map[p_name][4]}"
-                    }
-                    send_reservation_email(email, f"{nom} {ape}", email_data)
-                except Exception as e:
-                    print(f"Error enviando email automático: {e}")
-            
-            # --- DISPARADOR DE WHATSAPP ---
-            # Preguntar SIEMPRE si quiere enviar por WhatsApp (ya sea nueva o edición)
-            res = QMessageBox.question(self, "WhatsApp", "¿Desea enviar la confirmación por WhatsApp ahora?",
-                                       QMessageBox.Yes | QMessageBox.No)
-            if res == QMessageBox.Yes:
-                self.send_wa_confirmation()
+                config = self.db.get_config()
+                channel = config.get('channel_reservations', 'Email')
+                
+                data_common = {
+                    "id_reserva": rid, 
+                    "inmueble": p_name, 
+                    "fecha_ingreso": f_in.strftime("%d/%m/%Y"),
+                    "fecha_egreso": f_out.strftime("%d/%m/%Y"), 
+                    "noches": noches, 
+                    "costo_con_descuento": costo_final, 
+                    "adelanto": adelanto, 
+                    "pago_pendiente": pendiente,
+                    "checkin_time": self.property_map[p_name][13] if len(self.property_map[p_name]) > 13 else "14:00",
+                    "checkout_time": self.property_map[p_name][14] if len(self.property_map[p_name]) > 14 else "10:00",
+                    "ubicacion": f"{self.property_map[p_name][3]}, {self.property_map[p_name][4]}"
+                }
+
+                # 1. Enviar Email
+                if channel in ["Email", "Both"]:
+                    try:
+                        send_reservation_email(email, f"{nom} {ape}", data_common)
+                    except Exception as e:
+                        print(f"Error enviando email automático: {e}")
+
+                # 2. Enviar WhatsApp
+                if channel in ["WhatsApp", "Both"]:
+                    self.send_wa_confirmation()
+                else:
+                    # Si NO estaba configurado automático, preguntamos si quiere hacerlo manual
+                    res = QMessageBox.question(self, "WhatsApp", "¿Desea enviar también la confirmación por WhatsApp ahora?",
+                                               QMessageBox.Yes | QMessageBox.No)
+                    if res == QMessageBox.Yes:
+                        self.send_wa_confirmation()
+            else:
+                # Si es EDICIÓN, preguntamos si quiere enviar por WhatsApp
+                res = QMessageBox.question(self, "WhatsApp", "¿Desea enviar la confirmación por WhatsApp ahora?",
+                                           QMessageBox.Yes | QMessageBox.No)
+                if res == QMessageBox.Yes:
+                    self.send_wa_confirmation()
                 
             self.accept()
         else:

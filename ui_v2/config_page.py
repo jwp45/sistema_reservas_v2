@@ -164,6 +164,45 @@ class ConfigPage(QWidget):
         auto_layout.setContentsMargins(25, 25, 25, 25)
         auto_layout.setSpacing(20)
 
+        # CHANNEL PREFERENCES
+        group_channels = QGroupBox("Preferencia de Canales de Comunicación")
+        group_channels.setStyleSheet("QGroupBox { font-weight: bold; font-size: 14px; color: #34495e; }")
+        form_channels = QFormLayout(group_channels)
+        form_channels.setSpacing(15)
+        form_channels.setContentsMargins(20, 30, 20, 20)
+
+        self.combo_chan_quot = QComboBox()
+        self.combo_chan_quot.addItems(["Email", "WhatsApp", "Both"])
+        self.combo_chan_quot.setFixedHeight(35)
+        
+        self.combo_chan_res = QComboBox()
+        self.combo_chan_res.addItems(["Email", "WhatsApp", "Both"])
+        self.combo_chan_res.setFixedHeight(35)
+        
+        self.combo_chan_rem = QComboBox()
+        self.combo_chan_rem.addItems(["Email", "WhatsApp", "Both"])
+        self.combo_chan_rem.setFixedHeight(35)
+
+        # Apply same dropdown styling
+        chan_combo_style = """
+            QComboBox QAbstractItemView {
+                background-color: white; color: #2c3e50;
+                selection-background-color: #3498db; selection-color: white;
+                border: 1px solid #e0e0e0; outline: 0px;
+            }
+            QComboBox QAbstractItemView::item:selected, QComboBox QAbstractItemView::item:hover {
+                background-color: #3498db; color: white;
+            }
+        """
+        self.combo_chan_quot.setStyleSheet(chan_combo_style)
+        self.combo_chan_res.setStyleSheet(chan_combo_style)
+        self.combo_chan_rem.setStyleSheet(chan_combo_style)
+
+        form_channels.addRow("Canal para Cotizaciones:", self.combo_chan_quot)
+        form_channels.addRow("Canal para Reservas:", self.combo_chan_res)
+        form_channels.addRow("Canal para Recordatorios:", self.combo_chan_rem)
+        auto_layout.addWidget(group_channels)
+
         group_reminders = QGroupBox("Recordatorios Automáticos")
         group_reminders.setStyleSheet("QGroupBox { font-weight: bold; font-size: 14px; color: #e67e22; }")
         form_reminders = QFormLayout(group_reminders)
@@ -395,6 +434,18 @@ class ConfigPage(QWidget):
                     if field == 'reminder_days_before':
                         self.spin_days.setValue(int(value) if value is not None else 5)
 
+                    if field == 'channel_quotations':
+                        idx = self.combo_chan_quot.findText(str(value))
+                        if idx >= 0: self.combo_chan_quot.setCurrentIndex(idx)
+                    
+                    if field == 'channel_reservations':
+                        idx = self.combo_chan_res.findText(str(value))
+                        if idx >= 0: self.combo_chan_res.setCurrentIndex(idx)
+                    
+                    if field == 'channel_reminders':
+                        idx = self.combo_chan_rem.findText(str(value))
+                        if idx >= 0: self.combo_chan_rem.setCurrentIndex(idx)
+
                     if field == 'whatsapp_service_type':
                         idx = self.combo_wa_service.findText(str(value))
                         if idx >= 0: self.combo_wa_service.setCurrentIndex(idx)
@@ -420,6 +471,9 @@ class ConfigPage(QWidget):
         data['email_service_type'] = self.combo_service.currentText()
         data['whatsapp_service_type'] = self.combo_wa_service.currentText()
         data['reminder_days_before'] = self.spin_days.value()
+        data['channel_quotations'] = self.combo_chan_quot.currentText()
+        data['channel_reservations'] = self.combo_chan_res.currentText()
+        data['channel_reminders'] = self.combo_chan_rem.currentText()
         
         # Validation
         required_general = ["business_name", "whatsapp_number"]

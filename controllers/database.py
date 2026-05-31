@@ -103,6 +103,9 @@ class Database:
                     resend_api_key VARCHAR(255),
                     resend_from_email VARCHAR(255),
                     reminder_days_before INT DEFAULT 5,
+                    channel_quotations VARCHAR(20) DEFAULT 'Both',
+                    channel_reservations VARCHAR(20) DEFAULT 'Email',
+                    channel_reminders VARCHAR(20) DEFAULT 'Both',
                     CHECK (id = 1)
                 )
             """)
@@ -134,6 +137,12 @@ class Database:
                 cursor.execute("ALTER TABLE configuracion ADD COLUMN whatsapp_api_url VARCHAR(255) DEFAULT NULL")
             if 'whatsapp_acc_id' not in conf_cols:
                 cursor.execute("ALTER TABLE configuracion ADD COLUMN whatsapp_acc_id VARCHAR(255) DEFAULT NULL")
+            if 'channel_quotations' not in conf_cols:
+                cursor.execute("ALTER TABLE configuracion ADD COLUMN channel_quotations VARCHAR(20) DEFAULT 'Both'")
+            if 'channel_reservations' not in conf_cols:
+                cursor.execute("ALTER TABLE configuracion ADD COLUMN channel_reservations VARCHAR(20) DEFAULT 'Email'")
+            if 'channel_reminders' not in conf_cols:
+                cursor.execute("ALTER TABLE configuracion ADD COLUMN channel_reminders VARCHAR(20) DEFAULT 'Both'")
 
             # Asegurar columna recordatorio_enviado y fecha_envio_recordatorio en reservas
             cursor.execute("DESCRIBE reservas")
@@ -694,6 +703,25 @@ class Database:
 
         except Exception as e:
             print(f"Error al obtener las reservas: {e}")
+            return []
+        finally:
+            if cursor: cursor.close()
+
+    def get_client_reservations(self, client_id):
+        """Obtiene el historial completo de reservas de un cliente."""
+        cursor = None
+        try:
+            cursor = self.connection.cursor(buffered=True)
+            query = """SELECT r.id_reserva, i.nombre, r.fecha_ingreso, r.fecha_egreso,
+                               r.noches, r.costo_con_descuento, r.pago_pendiente, r.fecha_creacion
+                        FROM reservas r
+                        JOIN inmuebles i ON r.id_inmueble = i.id_inmueble
+                        WHERE r.id_cliente = %s
+                        ORDER BY r.fecha_ingreso DESC"""
+            cursor.execute(query, (client_id,))
+            return cursor.fetchall()
+        except Exception as e:
+            print(f"Error al obtener historial de cliente: {e}")
             return []
         finally:
             if cursor: cursor.close()
@@ -1293,7 +1321,7 @@ class Database:
         cursor = None
         try:
             cursor = self.connection.cursor(dictionary=True, buffered=True)
-            query = """SELECT r.*, c.nombre as cliente_nombre, c.apellido as cliente_apellido, c.email as cliente_email,
+            query = """SELECT r.*, c.nombre as cliente_nombre, c.apellido as cliente_apellido, c.email as cliente_email, c.telefono as cliente_telefono,
                                i.nombre as inmueble_nombre, i.direccion as inmueble_direccion, i.localidad as inmueble_localidad,
                                i.checkin_time, i.checkout_time
                         FROM reservas r
