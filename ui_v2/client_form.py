@@ -3,6 +3,7 @@ from PySide6.QtWidgets import (QDialog, QVBoxLayout, QHBoxLayout, QLabel,
                              QFrame)
 from PySide6.QtCore import Qt
 from controllers.database import Database
+from utils.email_sender import validate_email_format
 
 class ClientFormDialog(QDialog):
     def __init__(self, parent=None, client_data=None):
@@ -94,6 +95,11 @@ class ClientFormDialog(QDialog):
         
         if not all([doc, name, surname, email, phone]):
             QMessageBox.warning(self, "Error", "Todos los campos son obligatorios.")
+            return
+
+        is_valid, error_msg = validate_email_format(email)
+        if not is_valid:
+            QMessageBox.critical(self, "Email Inválido", error_msg)
             return
             
         if not self.db.connect():

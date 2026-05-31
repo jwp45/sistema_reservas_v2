@@ -1,13 +1,16 @@
 import os
+from datetime import date, datetime
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
                              QLineEdit, QPushButton, QFrame, QScrollArea,
                              QMessageBox)
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, Signal, QDate
 from PySide6.QtGui import QIcon, QColor
 from controllers.database import Database
 from controllers.automation_controller import AutomationController
 from ui_v2.payment_dialog import PaymentDialog
 from ui_v2.reservation_form import ReservationFormDialog
+from ui_v2.calendar_dialog import ModernCalendarDialog
+from PySide6.QtWidgets import QComboBox
 
 class ReservationCard(QFrame):
     def __init__(self, data, parent=None):
@@ -230,6 +233,47 @@ class ReservationListPage(QWidget):
         
         layout.addLayout(search_layout)
 
+        # Date Filters
+        filter_row = QHBoxLayout()
+        filter_row.setSpacing(10)
+
+        self.combo_filter_type = QComboBox()
+        self.combo_filter_type.addItems(["📅 Sin filtro de fecha", "📝 Fecha de Registro", "🏖️ Fecha de Estadía (Check-in)"])
+        self.combo_filter_type.setFixedHeight(35)
+        self.combo_filter_type.setStyleSheet("""
+            QComboBox { 
+                padding-left: 10px; border: 1px solid #d1d8e0; border-radius: 8px; background-color: white; min-width: 200px;
+            }
+        """)
+        self.combo_filter_type.currentIndexChanged.connect(self.filter_cards)
+        filter_row.addWidget(self.combo_filter_type)
+
+        self.btn_date_from = QPushButton("Desde: ---")
+        self.btn_date_from.setFixedHeight(35)
+        self.btn_date_from.setCursor(Qt.PointingHandCursor)
+        self.btn_date_from.setStyleSheet("background-color: white; border: 1px solid #d1d8e0; border-radius: 8px; padding: 0 15px;")
+        self.btn_date_from.clicked.connect(lambda: self.pick_date("from"))
+        filter_row.addWidget(self.btn_date_from)
+
+        self.btn_date_to = QPushButton("Hasta: ---")
+        self.btn_date_to.setFixedHeight(35)
+        self.btn_date_to.setCursor(Qt.PointingHandCursor)
+        self.btn_date_to.setStyleSheet("background-color: white; border: 1px solid #d1d8e0; border-radius: 8px; padding: 0 15px;")
+        self.btn_date_to.clicked.connect(lambda: self.pick_date("to"))
+        filter_row.addWidget(self.btn_date_to)
+
+        self.btn_clear_dates = QPushButton("✕")
+        self.btn_clear_dates.setFixedSize(35, 35)
+        self.btn_clear_dates.setStyleSheet("background-color: #f8d7da; color: #e74c3c; border: none; border-radius: 8px; font-weight: bold;")
+        self.btn_clear_dates.clicked.connect(self.clear_date_filters)
+        filter_row.addWidget(self.btn_clear_dates)
+
+        filter_row.addStretch()
+        layout.addLayout(filter_row)
+
+        self.date_from = None
+        self.date_to = None
+
         # Scroll Area for Cards
         self.scroll = QScrollArea()
         self.scroll.setWidgetResizable(True)
@@ -339,25 +383,87 @@ class ReservationListPage(QWidget):
         except Exception as e:
             QMessageBox.critical(self, "Error", f"No se pudo generar el PDF: {e}")
 
+    def pick_date(self, target):
+        initial = None
+        if target == "from":
+            if self.date_from:
+                initial = QDate(self.date_from.year, self.date_from.month, self.date_from.day)
+            elif self.date_to:
+                initial = QDate(self.date_to.year, self.date_to.month, self.date_to.day)
+        else: # target == "to"
+            if self.date_to:
+                initial = QDate(self.date_to.year, self.date_to.month, self.date_to.day)
+            elif self.date_from:
+                initial = QDate(self.date_from.year, self.date_from.month, self.date_from.day)
+            
+        dialog = ModernCalendarDialog(initial_date=initial, parent=self)
+        if dialog.exec():
+            selected = dialog.current_date
+            py_date = date(selected.year(), selected.month(), selected.day())
+            if target == "from":
+                self.date_from = py_date
+                self.btn_date_from.setText(f"Desde: {py_date.strftime('%d/%m/%Y')}")
+            else:
+                self.date_to = py_date
+                self.btn_date_to.setText(f"Hasta: {py_date.strftime('%d/%m/%Y')}")
+            
+            # Si no hay filtro seleccionado, poner por defecto "Fecha de Estadía"
+            if self.combo_filter_type.currentIndex() == 0:
+                self.combo_filter_type.setCurrentIndex(2)
+            else:
+                self.filter_cards()
+
+    def clear_date_filters(self):
+        self.date_from = None
+        self.date_to = None
+        self.btn_date_from.setText("Desde: ---")
+        self.btn_date_to.setText("Hasta: ---")
+        self.combo_filter_type.setCurrentIndex(0)
+        self.filter_cards()
+
     def filter_cards(self):
         query = self.search_input.text().lower()
-        if not query:
-            self.display_reservations(self.all_reservations)
-            return
-            
+        filter_type = self.combo_filter_type.currentIndex() # 0: None, 1: Created At, 2: Check-in Date
+        
         filtered = []
         for r in self.all_reservations:
+            # Text Filter
             res_code = f"R-{str(r[0]).zfill(5)}"
             search_data = f"{res_code} {r[1]} {r[3]}".lower()
-            if query in search_data:
-                filtered.append(r)
+            
+            if query and query not in search_data:
+                continue
+
+            # Date Filter
+            if filter_type > 0:
+                # 1: Created At (index 14), 2: Check-in (index 4)
+                target_date = r[14] if filter_type == 1 else r[4]
+                
+                # Normalize target_date to date if it's datetime
+                if isinstance(target_date, datetime):
+                    target_date = target_date.date()
+
+                if target_date:
+                    if self.date_from and target_date < self.date_from:
+                        continue
+                    if self.date_to and target_date > self.date_to:
+                        continue
+                elif self.date_from or self.date_to:
+                    # If we have filters but no date in record, exclude it
+                    continue
+
+            filtered.append(r)
         
         self.display_reservations(filtered)
+        self.update_stats_filtered(filtered)
+
+    def update_stats_filtered(self, data):
+        total_count = len(data)
+        total_pending = sum(float(r[11]) for r in data if r[11] is not None)
+        self.lbl_stats.setText(f"Mostrando: {total_count} reservas | Deuda: ${total_pending:,.0f}".replace(",", "."))
 
     def update_stats(self):
-        total_count = len(self.all_reservations)
-        total_pending = sum(float(r[11]) for r in self.all_reservations if r[11] is not None)
-        self.lbl_stats.setText(f"Total: {total_count} reservas activas | Deuda Pendiente: ${total_pending:,.0f}".replace(",", "."))
+        self.update_stats_filtered(self.all_reservations)
 
     def open_payments(self, r):
         dialog = PaymentDialog(self, reservation_id=r[0], client_name=r[1], pending_amount=float(r[11]))

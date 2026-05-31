@@ -113,8 +113,8 @@ class ModernCalendarDialog(QDialog):
             self.grid_layout.addWidget(btn, row, col)
 
     def select_day(self, day):
-        selected = QDate(self.view_date.year(), self.view_date.month(), day)
-        self.date_selected.emit(selected)
+        self.current_date = QDate(self.view_date.year(), self.view_date.month(), day)
+        self.date_selected.emit(self.current_date)
         self.accept()
 
     def prev_month(self):

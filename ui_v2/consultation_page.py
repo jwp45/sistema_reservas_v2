@@ -9,7 +9,7 @@ from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
 from PySide6.QtCore import Qt, QSize, Signal, QTimer, QUrl
 from PySide6.QtGui import QColor, QFont, QPalette, QPixmap, QDesktopServices
 from controllers.database import Database
-from utils.email_sender import send_quotation_email
+from utils.email_sender import send_quotation_email, validate_email_format
 from utils.whatsapp_sender import send_whatsapp_quotation, open_whatsapp_chat
 from ui_v2.reservation_form import ReservationFormDialog
 from ui_v2.advanced_search_dialog import AdvancedSearchDialog
@@ -938,9 +938,15 @@ class ConsultationPage(QWidget):
             QMessageBox.critical(self, "Error", "Por favor completa Nombre y Teléfono.")
             return
             
-        if mode == "email" and not email:
-            QMessageBox.critical(self, "Error", "Por favor completa el Email.")
-            return
+        if mode == "email":
+            if not email:
+                QMessageBox.critical(self, "Error", "Por favor completa el Email.")
+                return
+            
+            is_valid, error_msg = validate_email_format(email)
+            if not is_valid:
+                QMessageBox.critical(self, "Email Inválido", error_msg)
+                return
 
         if not self.start_date or not self.end_date or not self.selected_property:
             QMessageBox.warning(self, "Atención", "Selecciona fechas e inmueble antes de enviar.")

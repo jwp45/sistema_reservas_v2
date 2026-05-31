@@ -4,6 +4,8 @@ import tempfile
 import json
 import urllib.request
 import urllib.error
+import re
+import socket
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.mime.image import MIMEImage
@@ -11,6 +13,32 @@ from email.mime.base import MIMEBase
 from email import encoders
 from controllers.database import Database
 from PIL import Image
+
+def validate_email_format(email):
+    """
+    Valida la estructura y existencia básica del dominio de un correo electrónico.
+    Retorna (bool, mensaje_error)
+    """
+    if not email:
+        return False, "El correo electrónico no puede estar vacío."
+
+    # 1. Validación de Estructura (Regex)
+    pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+    if not re.match(pattern, email):
+        return False, "La estructura del correo electrónico es inválida."
+    
+    # 2. Validación de Dominio (Existencia DNS básica)
+    domain = email.split('@')[1]
+    try:
+        # Intenta resolver el dominio para verificar su existencia
+        socket.gethostbyname(domain)
+    except socket.gaierror:
+        return False, f"El dominio '@{domain}' no parece ser válido o no tiene registros DNS."
+    except Exception:
+        # Otros errores de red se ignoran para no bloquear si no hay internet momentáneamente
+        pass
+
+    return True, ""
 
 def get_smtp_config():
     db = Database()

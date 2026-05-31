@@ -8,7 +8,7 @@ from PySide6.QtGui import QPixmap, QColor
 import os
 from controllers.database import Database
 from datetime import datetime, date, timedelta
-from utils.email_sender import send_reservation_email
+from utils.email_sender import send_reservation_email, validate_email_format
 
 class ReservationFormDialog(QDialog):
     def __init__(self, parent=None, initial_data=None, reservation_id=None):
@@ -705,6 +705,17 @@ class ReservationFormDialog(QDialog):
         if not (doc and nom):
             QMessageBox.warning(self, "Faltan Datos", "Complete al menos Documento y Nombre del huésped.")
             return
+
+        if email:
+            is_valid, error_msg = validate_email_format(email)
+            if not is_valid:
+                QMessageBox.critical(self, "Email Inválido", error_msg)
+                return
+        else:
+            # Si se desea que el email sea obligatorio, descomentar las siguientes líneas:
+            # QMessageBox.warning(self, "Faltan Datos", "El correo electrónico es necesario para las notificaciones.")
+            # return
+            pass
 
         if not self.db.connect(): return
         cursor = self.db.connection.cursor()
