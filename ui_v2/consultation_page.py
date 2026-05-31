@@ -300,17 +300,35 @@ class ConsultationPage(QWidget):
 
         # Action Buttons
         self.btn_send_auto = QPushButton("🚀 ENVIAR COTIZACIÓN")
-        self.btn_send_auto.setStyleSheet("background-color: #2c3e50; color: white; font-weight: bold; height: 50px; border-radius: 8px; font-size: 14px;")
+        self.btn_send_auto.setStyleSheet("""
+            QPushButton { 
+                background-color: #3498db; color: white; font-weight: bold; 
+                height: 50px; border-radius: 8px; font-size: 14px; border: none;
+            }
+            QPushButton:hover { background-color: #2980b9; }
+        """)
         self.btn_send_auto.clicked.connect(self.send_auto)
         self.left_layout.addWidget(self.btn_send_auto)
 
         h_btn_layout = QHBoxLayout()
         self.btn_send_email = QPushButton("📧 Email")
-        self.btn_send_email.setStyleSheet("background-color: #3498db; color: white; font-weight: bold; height: 35px; border: none; border-radius: 5px;")
+        self.btn_send_email.setStyleSheet("""
+            QPushButton {
+                background-color: #f1f3f5; color: #2c3e50; font-weight: bold; 
+                height: 35px; border: 1px solid #dee2e6; border-radius: 5px;
+            }
+            QPushButton:hover { background-color: #e9ecef; border: 1px solid #3498db; color: #3498db; }
+        """)
         self.btn_send_email.clicked.connect(self.send_email)
         
         self.btn_send_wa = QPushButton("✅ WhatsApp")
-        self.btn_send_wa.setStyleSheet("background-color: #25D366; color: white; font-weight: bold; height: 35px; border: none; border-radius: 5px;")
+        self.btn_send_wa.setStyleSheet("""
+            QPushButton {
+                background-color: #25D366; color: white; font-weight: bold; 
+                height: 35px; border: none; border-radius: 5px;
+            }
+            QPushButton:hover { background-color: #128C7E; }
+        """)
         self.btn_send_wa.clicked.connect(self.send_wa)
         
         h_btn_layout.addWidget(self.btn_send_email)
@@ -320,7 +338,8 @@ class ConsultationPage(QWidget):
         self.btn_reserve = QPushButton("🚀 RESERVAR AHORA")
         self.btn_reserve.setEnabled(False)
         self.btn_reserve.setStyleSheet("""
-            QPushButton { background-color: #3498db; color: white; font-weight: bold; height: 45px; border-radius: 5px; border: none; }
+            QPushButton { background-color: #27ae60; color: white; font-weight: bold; height: 45px; border-radius: 5px; border: none; }
+            QPushButton:hover { background-color: #219150; }
             QPushButton:disabled { background-color: #bdc3c7; }
         """)
         self.btn_reserve.clicked.connect(self.go_to_reservation)
@@ -333,9 +352,12 @@ class ConsultationPage(QWidget):
         self.btn_view_gallery.setEnabled(False)
         self.btn_view_gallery.setCursor(Qt.PointingHandCursor)
         self.btn_view_gallery.setStyleSheet("""
-            QPushButton { background-color: #2c3e50; color: white; font-weight: bold; height: 35px; border-radius: 5px; border: none; }
-            QPushButton:hover { background-color: #34495e; }
-            QPushButton:disabled { background-color: #ecf0f1; color: #bdc3c7; }
+            QPushButton { 
+                background-color: #ebf5fb; color: #3498db; font-weight: bold; 
+                height: 35px; border-radius: 5px; border: 1px solid #3498db; 
+            }
+            QPushButton:hover { background-color: #3498db; color: white; }
+            QPushButton:disabled { background-color: #f8f9fa; color: #bdc3c7; border: 1px solid #e0e0e0; }
         """)
         self.btn_view_gallery.clicked.connect(self.open_gallery)
         
@@ -343,9 +365,12 @@ class ConsultationPage(QWidget):
         self.btn_view_services.setEnabled(False)
         self.btn_view_services.setCursor(Qt.PointingHandCursor)
         self.btn_view_services.setStyleSheet("""
-            QPushButton { background-color: #2c3e50; color: white; font-weight: bold; height: 35px; border-radius: 5px; border: none; }
-            QPushButton:hover { background-color: #34495e; }
-            QPushButton:disabled { background-color: #ecf0f1; color: #bdc3c7; }
+            QPushButton { 
+                background-color: #ebf5fb; color: #3498db; font-weight: bold; 
+                height: 35px; border-radius: 5px; border: 1px solid #3498db; 
+            }
+            QPushButton:hover { background-color: #3498db; color: white; }
+            QPushButton:disabled { background-color: #f8f9fa; color: #bdc3c7; border: 1px solid #e0e0e0; }
         """)
         self.btn_view_services.clicked.connect(self.open_services)
         
