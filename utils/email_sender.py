@@ -139,31 +139,90 @@ def send_reservation_email(client_email, client_name, data):
     config = get_smtp_config()
     res_id = data.get('id_reserva', '—')
     res_code = f"R-{str(res_id).zfill(5)}" if str(res_id).isdigit() else res_id
-    subject = f"Confirmación de Reserva {res_code} - {data.get('inmueble', '')}"
+    business_name = config.get('business_name')
+    whatsapp = config.get("whatsapp_number")
+    
+    subject = f"✅ Reserva Confirmada {res_code} - {data.get('inmueble', '')}"
 
     body = f"""
     <html>
-    <body style="font-family: Arial, sans-serif; padding: 20px;">
-        <h2 style="color: #2e7d32;">¡Reserva Confirmada!</h2>
-        <p style="color: #555;">Código de Reserva: <strong>{res_code}</strong></p>
-        <p>Hola <strong>{client_name}</strong>,</p>
-        <p>Te confirmamos los detalles de tu reserva en <strong>{config.get('business_name')}</strong>:</p>
-        <table style="border-collapse: collapse; width: 100%; max-width: 500px;">
-            <tr><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>Fecha Ingreso:</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd;">{data.get('fecha_ingreso', '')} (Check-in: {data.get('checkin_time', '14:00')} hs)</td></tr>
-            <tr><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>Fecha Egreso:</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd;">{data.get('fecha_egreso', '')} (Check-out: {data.get('checkout_time', '10:00')} hs)</td></tr>
-            <tr><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>Noches:</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd;">{data.get('noches', '')}</td></tr>
-            <tr><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>Inmueble:</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd;">{data.get('inmueble', '')}</td></tr>
-            <tr><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>Ubicación:</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd;">{data.get('ubicacion', 'Consultar')}</td></tr>
-            <tr><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>Distribución:</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd;">{data.get('dormitorios', 0)} Dorm. / {data.get('camas', 0)} Camas / {data.get('baños', 0)} Baños</td></tr>
-            <tr><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>Servicios:</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd;">{data.get('servicios', 'No especificados')}</td></tr>
-            <tr><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>Valor por Día:</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd;">${data.get('valor_dia', 0):,.2f}</td></tr>
-            <tr><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>Costo Total:</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd;">${data.get('costo_total', 0):,.2f}</td></tr>
-            <tr><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>Costo con Descuento:</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd;">${data.get('costo_con_descuento', 0):,.2f}</td></tr>
-            <tr><td style="padding: 8px; border-bottom: 1px solid #ddd;"><strong>Adelanto:</strong></td><td style="padding: 8px; border-bottom: 1px solid #ddd;">${data.get('adelanto', 0):,.2f}</td></tr>
-            <tr><td style="padding: 8px;"><strong>Pago Pendiente:</strong></td><td style="padding: 8px;">${data.get('pago_pendiente', 0):,.2f}</td></tr>
-        </table>
-        <br>
-        <p style="color: #555;">Gracias por confiar en <strong>{config.get('business_name')}</strong>.</p>
+    <body style="font-family: 'Segoe UI', Arial, sans-serif; padding: 20px; color: #333; line-height: 1.6; background-color: #f4f4f4;">
+        <div style="max-width: 600px; margin: auto; border: 1px solid #e0e0e0; border-radius: 12px; overflow: hidden; background-color: #ffffff; box-shadow: 0 4px 10px rgba(0,0,0,0.05);">
+            <div style="background-color: #2e7d32; color: white; padding: 30px; text-align: center;">
+                <h1 style="margin: 0; font-size: 24px;">¡Reserva Confirmada!</h1>
+                <p style="margin: 5px 0; font-size: 16px; opacity: 0.9;">Código de Reserva: {res_code}</p>
+            </div>
+            
+            <div style="padding: 30px;">
+                <p style="font-size: 18px; margin-top: 0;">Hola <strong>{client_name}</strong>,</p>
+                <p>Es un placer saludarte. Te confirmamos que tu reserva en <strong>{business_name}</strong> ha sido registrada con éxito. A continuación, los detalles de tu próxima estadía:</p>
+                
+                <h3 style="color: #2e7d32; border-bottom: 2px solid #e8f5e9; padding-bottom: 8px; margin-top: 30px;">🏠 Información del Inmueble</h3>
+                <div style="background-color: #f9f9f9; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+                    <p style="margin: 8px 0; font-size: 16px;"><strong>{data.get('inmueble', '')}</strong></p>
+                    <p style="margin: 5px 0; color: #666;">{data.get('dormitorios', 0)} Dormitorios | {data.get('camas', 0)} Camas | {data.get('baños', 0)} Baños</p>
+                </div>
+
+                <table style="width: 100%; margin-bottom: 25px; border-collapse: collapse;">
+                    <tr>
+                        <td style="width: 50%; vertical-align: top;">
+                            <p style="margin: 0; color: #7f8c8d; font-size: 12px; text-transform: uppercase; letter-spacing: 1px;">📅 Check-in</p>
+                            <p style="margin: 5px 0; font-weight: bold; font-size: 16px;">{data.get('fecha_ingreso', '')}</p>
+                            <p style="margin: 0; color: #666;">{data.get('checkin_time', '14:00')} hs</p>
+                        </td>
+                        <td style="width: 50%; vertical-align: top;">
+                            <p style="margin: 0; color: #7f8c8d; font-size: 12px; text-transform: uppercase; letter-spacing: 1px;">📅 Check-out</p>
+                            <p style="margin: 5px 0; font-weight: bold; font-size: 16px;">{data.get('fecha_egreso', '')}</p>
+                            <p style="margin: 0; color: #666;">{data.get('checkout_time', '10:00')} hs</p>
+                        </td>
+                    </tr>
+                </table>
+
+                <p style="margin: 10px 0;"><strong>Duración:</strong> {data.get('noches', '')} noches</p>
+
+                <h3 style="color: #2e7d32; border-bottom: 2px solid #e8f5e9; padding-bottom: 8px; margin-top: 30px;">✨ Servicios Incluidos</h3>
+                <div style="background-color: #f1f8e9; padding: 20px; border-radius: 8px; width: 100%; box-sizing: border-box; color: #2e7d32; margin-bottom: 30px;">
+                    <p style="margin: 0; line-height: 1.6;">{data.get('servicios', 'Servicios estándar incluidos.')}</p>
+                </div>
+
+                <h3 style="color: #2e7d32; border-bottom: 2px solid #e8f5e9; padding-bottom: 8px;">💰 Resumen Financiero</h3>
+                <table style="width: 100%; border-collapse: collapse; margin-top: 10px;">
+                    <tr>
+                        <td style="padding: 10px 0; border-bottom: 1px solid #eee; color: #666;">Precio por noche</td>
+                        <td style="padding: 10px 0; border-bottom: 1px solid #eee; text-align: right;">${float(data.get('valor_dia', 0)):,.2f}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 10px 0; border-bottom: 1px solid #eee; color: #666;">Costo total estadía</td>
+                        <td style="padding: 10px 0; border-bottom: 1px solid #eee; text-align: right;">${float(data.get('costo_total', 0)):,.2f}</td>
+                    </tr>
+                    {f'<tr><td style="padding: 10px 0; border-bottom: 1px solid #eee; color: #2e7d32;">Descuento aplicado</td><td style="padding: 10px 0; border-bottom: 1px solid #eee; text-align: right; color: #2e7d32; font-weight: bold;">-${float(data.get("costo_total", 0)) - float(data.get("costo_con_descuento", 0)):,.2f}</td></tr>' if float(data.get('costo_total', 0)) > float(data.get('costo_con_descuento', 0)) else ''}
+                    <tr>
+                        <td style="padding: 10px 0; border-bottom: 1px solid #eee; font-weight: bold;">Monto Final</td>
+                        <td style="padding: 10px 0; border-bottom: 1px solid #eee; text-align: right; font-weight: bold; font-size: 18px;">${float(data.get('costo_con_descuento', 0)):,.2f}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 10px 0; border-bottom: 1px solid #eee; color: #666;">Adelanto abonado</td>
+                        <td style="padding: 10px 0; border-bottom: 1px solid #eee; text-align: right; color: #2e7d32;">${float(data.get('adelanto', 0)):,.2f}</td>
+                    </tr>
+                    <tr style="background-color: #fff3e0;">
+                        <td style="padding: 15px 10px; font-weight: bold; color: #e65100; border-radius: 4px 0 0 4px;">PAGO PENDIENTE</td>
+                        <td style="padding: 15px 10px; text-align: right; font-weight: bold; color: #e65100; font-size: 20px; border-radius: 0 4px 4px 0;">${float(data.get('pago_pendiente', 0)):,.2f}</td>
+                    </tr>
+                </table>
+
+                <div style="text-align: center; margin-top: 40px; padding-top: 30px; border-top: 1px solid #eee;">
+                    <p style="margin-bottom: 20px;">¿Tienes alguna consulta? Contáctanos directamente:</p>
+                    <a href="https://wa.me/{whatsapp}" style="background-color: #25d366; color: white; padding: 12px 25px; text-decoration: none; border-radius: 50px; font-weight: bold; display: inline-block;">
+                        Escribir por WhatsApp
+                    </a>
+                </div>
+            </div>
+            
+            <div style="background-color: #f4f4f4; padding: 20px; text-align: center; font-size: 12px; color: #999;">
+                <p style="margin: 0;">Gracias por elegir <strong>{business_name}</strong>. ¡Te esperamos!</p>
+                <p style="margin: 5px 0;">Este es un correo automático, por favor no respondas directamente.</p>
+            </div>
+        </div>
     </body>
     </html>
     """
@@ -483,6 +542,7 @@ def send_checkin_reminder_smtp(client_email, client_name, reservation_data):
     smtp_port = config.get("smtp_port")
     from_email = config.get("from_email")
     business_name = config.get("business_name")
+    whatsapp = config.get("whatsapp_number")
 
     if not smtp_user or not smtp_password:
         return False
@@ -494,25 +554,65 @@ def send_checkin_reminder_smtp(client_email, client_name, reservation_data):
     
     body = f"""
     <html>
-    <body style="font-family: Arial, sans-serif; padding: 20px; line-height: 1.6;">
-        <h2 style="color: #2c3e50;">{business_name}</h2>
-        <p>Hola <strong>{client_name}</strong>,</p>
-        <p>¡Estamos muy emocionados por recibirte! Queremos que todo esté listo para tu llegada el próximo <strong>{reservation_data.get('fecha_ingreso')}</strong>.</p>
-        
-        <div style="background-color: #f4f7f6; padding: 15px; border-radius: 5px; margin: 20px 0;">
-            <p style="margin: 5px 0;"><strong>📍 Inmueble:</strong> {reservation_data.get('inmueble_nombre')}</p>
-            <p style="margin: 5px 0;"><strong>📅 Fecha Ingreso:</strong> {reservation_data.get('fecha_ingreso')} (a las {reservation_data.get('checkin_time', '14:00')} hs)</p>
-            <p style="margin: 5px 0;"><strong>🕒 Fecha Egreso:</strong> {reservation_data.get('fecha_egreso')} (a las {reservation_data.get('checkout_time', '10:00')} hs)</p>
-            <p style="margin: 5px 0;"><strong>Dirección:</strong> {reservation_data.get('inmueble_direccion')}, {reservation_data.get('inmueble_localidad')}</p>
-            <p style="margin: 5px 0;"><strong>Saldo Pendiente:</strong> ${float(reservation_data.get('pago_pendiente', 0)):,.2f}</p>
+    <body style="font-family: 'Segoe UI', Arial, sans-serif; padding: 20px; color: #333; line-height: 1.6; background-color: #f4f4f4;">
+        <div style="max-width: 600px; margin: auto; border: 1px solid #e0e0e0; border-radius: 12px; overflow: hidden; background-color: #ffffff; box-shadow: 0 4px 10px rgba(0,0,0,0.05);">
+            <div style="background-color: #2c3e50; color: white; padding: 30px; text-align: center;">
+                <h1 style="margin: 0; font-size: 24px;">¡Falta muy poco!</h1>
+                <p style="margin: 5px 0; font-size: 16px; opacity: 0.9;">Recordatorio de Check-in - {res_code}</p>
+            </div>
+            
+            <div style="padding: 30px;">
+                <p style="font-size: 18px; margin-top: 0;">Hola <strong>{client_name}</strong>,</p>
+                <p>¡Estamos muy emocionados por recibirte! Queremos que todo esté listo para tu llegada el próximo <strong>{reservation_data.get('fecha_ingreso')}</strong>.</p>
+                
+                <h3 style="color: #2c3e50; border-bottom: 2px solid #eaeded; padding-bottom: 8px; margin-top: 30px;">📍 Detalles de tu Llegada</h3>
+                <div style="background-color: #f9f9f9; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+                    <p style="margin: 8px 0; font-size: 16px;"><strong>{reservation_data.get('inmueble_nombre')}</strong></p>
+                    <p style="margin: 5px 0; color: #666;">{reservation_data.get('inmueble_direccion')}, {reservation_data.get('inmueble_localidad')}</p>
+                    <p style="margin: 15px 0 0 0;">
+                        <a href="https://www.google.com/maps/search/?api=1&query={reservation_data.get('inmueble_direccion', '').replace(' ', '+')}+{reservation_data.get('inmueble_localidad', '').replace(' ', '+')}" 
+                           style="color: #3498db; font-weight: bold; text-decoration: none;">📍 Ver en Google Maps</a>
+                    </p>
+                </div>
+
+                <table style="width: 100%; margin-bottom: 25px; border-collapse: collapse;">
+                    <tr>
+                        <td style="width: 50%; vertical-align: top;">
+                            <p style="margin: 0; color: #7f8c8d; font-size: 12px; text-transform: uppercase; letter-spacing: 1px;">📅 Fecha Ingreso</p>
+                            <p style="margin: 5px 0; font-weight: bold; font-size: 16px;">{reservation_data.get('fecha_ingreso')}</p>
+                            <p style="margin: 0; color: #666;">A las {reservation_data.get('checkin_time', '14:00')} hs</p>
+                        </td>
+                        <td style="width: 50%; vertical-align: top;">
+                            <p style="margin: 0; color: #7f8c8d; font-size: 12px; text-transform: uppercase; letter-spacing: 1px;">📅 Fecha Egreso</p>
+                            <p style="margin: 5px 0; font-weight: bold; font-size: 16px;">{reservation_data.get('fecha_egreso')}</p>
+                            <p style="margin: 0; color: #666;">A las {reservation_data.get('checkout_time', '10:00')} hs</p>
+                        </td>
+                    </tr>
+                </table>
+
+                <h3 style="color: #2c3e50; border-bottom: 2px solid #eaeded; padding-bottom: 8px; margin-top: 30px;">✨ Servicios del Inmueble</h3>
+                <div style="background-color: #f1f8e9; padding: 20px; border-radius: 8px; width: 100%; box-sizing: border-box; color: #2e7d32; margin-bottom: 30px;">
+                    <p style="margin: 0; line-height: 1.6;">{reservation_data.get('servicios', 'Servicios estándar incluidos.')}</p>
+                </div>
+
+                <div style="background-color: #fff3e0; padding: 20px; border-radius: 8px; text-align: center; border: 1px solid #ffe0b2; margin-bottom: 30px;">
+                    <p style="margin: 0; color: #e65100; font-size: 14px; text-transform: uppercase; letter-spacing: 1px;">Saldo Pendiente a Abonar</p>
+                    <p style="margin: 10px 0; font-size: 28px; font-weight: bold; color: #e65100;">${float(reservation_data.get('pago_pendiente', 0)):,.2f}</p>
+                </div>
+
+                <div style="text-align: center; margin-top: 40px; padding-top: 30px; border-top: 1px solid #eee;">
+                    <p style="margin-bottom: 20px;">Si tienes alguna duda o necesitas coordinar tu horario de llegada:</p>
+                    <a href="https://wa.me/{whatsapp}" style="background-color: #25d366; color: white; padding: 12px 25px; text-decoration: none; border-radius: 50px; font-weight: bold; display: inline-block;">
+                        Coordinar por WhatsApp
+                    </a>
+                </div>
+            </div>
+            
+            <div style="background-color: #f4f4f4; padding: 20px; text-align: center; font-size: 12px; color: #999;">
+                <p style="margin: 0;"><strong>{business_name}</strong> - Alquileres Temporarios</p>
+                <p style="margin: 5px 0;">Este es un mensaje automático, por favor no respondas directamente.</p>
+            </div>
         </div>
-
-        <p>Puedes ver la ubicación exacta en Google Maps aquí:<br>
-        <a href="https://www.google.com/maps/search/?api=1&query={reservation_data.get('inmueble_direccion').replace(' ', '+')}+{reservation_data.get('inmueble_localidad').replace(' ', '+')}">Ver Mapa</a></p>
-
-        <p>Cualquier duda, contáctanos por WhatsApp al {config.get('whatsapp_number')}.</p>
-        <br>
-        <p style="font-size: 12px; color: #7f8c8d;">Atentamente,<br>{business_name}</p>
     </body>
     </html>
     """
@@ -551,6 +651,7 @@ def send_checkin_reminder_resend(client_email, client_name, reservation_data):
     api_key = config.get("resend_api_key")
     from_email = config.get("resend_from_email") or config.get("from_email")
     business_name = config.get("business_name")
+    whatsapp = config.get("whatsapp_number")
 
     if not api_key:
         print("Error: No hay API Key de Resend configurada.")
@@ -563,38 +664,64 @@ def send_checkin_reminder_resend(client_email, client_name, reservation_data):
     
     body = f"""
     <html>
-    <body style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; color: #333; line-height: 1.6; max-width: 600px; margin: auto; border: 1px solid #eee; border-radius: 10px; padding: 20px;">
-        <div style="text-align: center; border-bottom: 2px solid #3498db; padding-bottom: 15px;">
-            <h1 style="color: #2c3e50; margin: 0;">{business_name}</h1>
-            <p style="color: #3498db; font-weight: bold; margin: 5px 0;">Recordatorio de Próximo Check-in ({res_code})</p>
-        </div>
-        
-        <div style="padding: 20px 0;">
-            <p>Hola <strong>{client_name}</strong>,</p>
-            <p>¡Estamos muy emocionados por recibirte! Queremos que todo esté listo para tu llegada el próximo <strong>{reservation_data.get('fecha_ingreso')}</strong>.</p>
-            
-            <div style="background-color: #f9f9f9; border-left: 4px solid #3498db; padding: 15px; margin: 20px 0;">
-                <h3 style="margin-top: 0; color: #2c3e50;">📍 Detalles de Ubicación</h3>
-                <p style="margin: 5px 0;"><strong>Inmueble:</strong> {reservation_data.get('inmueble_nombre')}</p>
-                <p style="margin: 5px 0;"><strong>Dirección:</strong> {reservation_data.get('inmueble_direccion')}, {reservation_data.get('inmueble_localidad')}</p>
-                <p style="margin: 15px 0 0 0; text-align: center;">
-                    <a href="https://www.google.com/maps/search/?api=1&query={reservation_data.get('inmueble_direccion').replace(' ', '+')}+{reservation_data.get('inmueble_localidad').replace(' ', '+')}" 
-                       style="background-color: #3498db; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;">VER EN GOOGLE MAPS</a>
-                </p>
+    <body style="font-family: 'Segoe UI', Arial, sans-serif; padding: 20px; color: #333; line-height: 1.6; background-color: #f4f4f4;">
+        <div style="max-width: 600px; margin: auto; border: 1px solid #e0e0e0; border-radius: 12px; overflow: hidden; background-color: #ffffff; box-shadow: 0 4px 10px rgba(0,0,0,0.05);">
+            <div style="background-color: #3498db; color: white; padding: 30px; text-align: center;">
+                <h1 style="margin: 0; font-size: 24px;">¡Falta muy poco!</h1>
+                <p style="margin: 5px 0; font-size: 16px; opacity: 0.9;">Recordatorio de Check-in - {res_code}</p>
             </div>
+            
+            <div style="padding: 30px;">
+                <p style="font-size: 18px; margin-top: 0;">Hola <strong>{client_name}</strong>,</p>
+                <p>¡Estamos muy emocionados por recibirte! Queremos que todo esté listo para tu llegada el próximo <strong>{reservation_data.get('fecha_ingreso')}</strong>.</p>
+                
+                <h3 style="color: #2c3e50; border-bottom: 2px solid #eaeded; padding-bottom: 8px; margin-top: 30px;">📍 Detalles de tu Llegada</h3>
+                <div style="background-color: #f9f9f9; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+                    <p style="margin: 8px 0; font-size: 16px;"><strong>{reservation_data.get('inmueble_nombre')}</strong></p>
+                    <p style="margin: 5px 0; color: #666;">{reservation_data.get('inmueble_direccion')}, {reservation_data.get('inmueble_localidad')}</p>
+                    <p style="margin: 15px 0 0 0;">
+                        <a href="https://www.google.com/maps/search/?api=1&query={reservation_data.get('inmueble_direccion', '').replace(' ', '+')}+{reservation_data.get('inmueble_localidad', '').replace(' ', '+')}" 
+                           style="color: #3498db; font-weight: bold; text-decoration: none;">📍 Ver en Google Maps</a>
+                    </p>
+                </div>
 
-            <h3 style="color: #2c3e50;">ℹ️ Información Importante</h3>
-            <ul style="padding-left: 20px;">
-                <li><strong>Check-in:</strong> A partir de las {reservation_data.get('checkin_time', '14:00')} hs.</li>
-                <li><strong>Check-out:</strong> Hasta las {reservation_data.get('checkout_time', '10:00')} hs.</li>
-                <li><strong>Saldo Pendiente:</strong> ${float(reservation_data.get('pago_pendiente', 0)):,.2f}</li>
-            </ul>
+                <table style="width: 100%; margin-bottom: 25px; border-collapse: collapse;">
+                    <tr>
+                        <td style="width: 50%; vertical-align: top;">
+                            <p style="margin: 0; color: #7f8c8d; font-size: 12px; text-transform: uppercase; letter-spacing: 1px;">📅 Fecha Ingreso</p>
+                            <p style="margin: 5px 0; font-weight: bold; font-size: 16px;">{reservation_data.get('fecha_ingreso')}</p>
+                            <p style="margin: 0; color: #666;">A las {reservation_data.get('checkin_time', '14:00')} hs</p>
+                        </td>
+                        <td style="width: 50%; vertical-align: top;">
+                            <p style="margin: 0; color: #7f8c8d; font-size: 12px; text-transform: uppercase; letter-spacing: 1px;">📅 Fecha Egreso</p>
+                            <p style="margin: 5px 0; font-weight: bold; font-size: 16px;">{reservation_data.get('fecha_egreso')}</p>
+                            <p style="margin: 0; color: #666;">A las {reservation_data.get('checkout_time', '10:00')} hs</p>
+                        </td>
+                    </tr>
+                </table>
 
-            <p>Si tienes alguna duda o necesitas coordinar tu horario de llegada, puedes escribirnos directamente por WhatsApp al <strong>{config.get('whatsapp_number')}</strong>.</p>
-        </div>
+                <h3 style="color: #2c3e50; border-bottom: 2px solid #eaeded; padding-bottom: 8px; margin-top: 30px;">✨ Servicios del Inmueble</h3>
+                <div style="background-color: #f1f8e9; padding: 20px; border-radius: 8px; width: 100%; box-sizing: border-box; color: #2e7d32; margin-bottom: 30px;">
+                    <p style="margin: 0; line-height: 1.6;">{reservation_data.get('servicios', 'Servicios estándar incluidos.')}</p>
+                </div>
 
-        <div style="text-align: center; border-top: 1px solid #eee; padding-top: 20px; font-size: 12px; color: #7f8c8d;">
-            <p>Este es un mensaje automático enviado por {business_name}.<br>Por favor, no respondas a este correo.</p>
+                <div style="background-color: #fff3e0; padding: 20px; border-radius: 8px; text-align: center; border: 1px solid #ffe0b2; margin-bottom: 30px;">
+                    <p style="margin: 0; color: #e65100; font-size: 14px; text-transform: uppercase; letter-spacing: 1px;">Saldo Pendiente a Abonar</p>
+                    <p style="margin: 10px 0; font-size: 28px; font-weight: bold; color: #e65100;">${float(reservation_data.get('pago_pendiente', 0)):,.2f}</p>
+                </div>
+
+                <div style="text-align: center; margin-top: 40px; padding-top: 30px; border-top: 1px solid #eee;">
+                    <p style="margin-bottom: 20px;">Si tienes alguna duda o necesitas coordinar tu horario de llegada:</p>
+                    <a href="https://wa.me/{whatsapp}" style="background-color: #25d366; color: white; padding: 12px 25px; text-decoration: none; border-radius: 50px; font-weight: bold; display: inline-block;">
+                        Coordinar por WhatsApp
+                    </a>
+                </div>
+            </div>
+            
+            <div style="background-color: #f4f4f4; padding: 20px; text-align: center; font-size: 12px; color: #999;">
+                <p style="margin: 0;"><strong>{business_name}</strong> - Alquileres Temporarios</p>
+                <p style="margin: 5px 0;">Este es un mensaje automático enviado por {business_name}.<br>Por favor, no respondas a este correo.</p>
+            </div>
         </div>
     </body>
     </html>

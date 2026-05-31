@@ -463,17 +463,52 @@ class ReservationFormDialog(QDialog):
 
     def open_calendar(self, target):
         initial = self.d_in if target == "in" else self.d_out
-        dlg = ModernCalendarDialog(initial, self)
+        
+        # Obtener rangos reservados para el inmueble actual
+        p_name = self.combo_prop.currentText()
+        reserved_ranges = []
+        if p_name in self.property_map:
+            pid = self.property_map[p_name][0]
+            # Excluimos la reserva actual si estamos editando
+            reserved_ranges = self.db.get_reserved_ranges(id_inmueble=pid, exclude_id=self.reservation_id)
+            
+        dlg = ModernCalendarDialog(initial, self, reserved_ranges=reserved_ranges, target=target)
         dlg.date_selected.connect(lambda d: self.on_date_selected(d, target))
         dlg.exec()
 
     def on_date_selected(self, q_date, target):
+        old_in = self.d_in
+        old_out = self.d_out
+        
         if target == "in":
             self.d_in = q_date
-            self.btn_checkin.setText(q_date.toString("dd/MM/yyyy"))
         else:
             self.d_out = q_date
-            self.btn_checkout.setText(q_date.toString("dd/MM/yyyy"))
+            
+        # Verificar si el rango es válido
+        d_in_py = date(self.d_in.year(), self.d_in.month(), self.d_in.day())
+        d_out_py = date(self.d_out.year(), self.d_out.month(), self.d_out.day())
+        
+        if d_out_py <= d_in_py:
+            # Si el rango es inválido, revertir
+            self.d_in = old_in
+            self.d_out = old_out
+            QMessageBox.warning(self, "Fecha Inválida", "La fecha de egreso debe ser posterior a la de ingreso.")
+            return
+
+        # Verificar disponibilidad del rango
+        p_name = self.combo_prop.currentText()
+        if p_name in self.property_map:
+            pid = self.property_map[p_name][0]
+            if not self.db.is_range_available(pid, d_in_py, d_out_py, exclude_res_id=self.reservation_id):
+                self.d_in = old_in
+                self.d_out = old_out
+                QMessageBox.warning(self, "Rango no disponible", "El periodo seleccionado se superpone con una reserva existente.")
+                return
+
+        # Actualizar botones y totales
+        self.btn_checkin.setText(self.d_in.toString("dd/MM/yyyy"))
+        self.btn_checkout.setText(self.d_out.toString("dd/MM/yyyy"))
         self.calculate_totals()
 
     def _create_section(self, title, accent_color="#3498db"):
@@ -797,20 +832,33 @@ class ReservationFormDialog(QDialog):
                 config = self.db.get_config()
                 channel = config.get('channel_reservations', 'Email')
                 
+                # Obtener servicios con iconos
+                serv_raw = self.db.get_property_services(id_inm)
+                serv_str = ", ".join([f"{s[0]} {s[1]}" for s in serv_raw]) if serv_raw else "No especificados"
+
                 data_common = {
-                    "id_reserva": rid, 
-                    "inmueble": p_name, 
+                    "id_reserva": rid,
+                    "inmueble": p_name,
                     "fecha_ingreso": f_in.strftime("%d/%m/%Y"),
-                    "fecha_egreso": f_out.strftime("%d/%m/%Y"), 
-                    "noches": noches, 
-                    "costo_con_descuento": costo_final, 
-                    "adelanto": adelanto, 
+                    "fecha_egreso": f_out.strftime("%d/%m/%Y"),
+                    "noches": noches,
+                    "costo_total": total,
+                    "valor_dia": val_dia,
+                    "descuento_monto": disc if not self.chk_perc.isChecked() else (total * (disc / 100)),
+                    "costo_con_descuento": costo_final,
+                    "adelanto": adelanto,
                     "pago_pendiente": pendiente,
                     "checkin_time": self.property_map[p_name][13] if len(self.property_map[p_name]) > 13 else "14:00",
                     "checkout_time": self.property_map[p_name][14] if len(self.property_map[p_name]) > 14 else "10:00",
-                    "ubicacion": f"{self.property_map[p_name][3]}, {self.property_map[p_name][4]}"
+                    "direccion": self.property_map[p_name][3],
+                    "localidad": self.property_map[p_name][4],
+                    "provincia": self.property_map[p_name][5],
+                    "ubicacion": f"{self.property_map[p_name][3]}, {self.property_map[p_name][4]}",
+                    "dormitorios": self.property_map[p_name][9] if len(self.property_map[p_name]) > 9 else 0,
+                    "camas": self.property_map[p_name][10] if len(self.property_map[p_name]) > 10 else 0,
+                    "baños": self.property_map[p_name][11] if len(self.property_map[p_name]) > 11 else 0,
+                    "servicios": serv_str
                 }
-
                 # 1. Enviar Email
                 if channel in ["Email", "Both"]:
                     try:

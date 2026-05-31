@@ -48,9 +48,8 @@ def send_whatsapp_confirmation(phone_number, client_name, data):
     config = get_smtp_config()
     
     service_type = config.get('whatsapp_service_type', 'Manual')
-    api_key = config.get('whatsapp_api_key')
-    acc_id = config.get('whatsapp_acc_id')
     business_name = config.get('business_name', 'Sistema de Reservas')
+    whatsapp_config = config.get('whatsapp_number', '')
 
     # Emojis para el mensaje
     wave = "\U0001F44B"
@@ -70,14 +69,22 @@ def send_whatsapp_confirmation(phone_number, client_name, data):
     message += f"_{business_name}_\n\n"
     
     message += f"*DATOS DE LA ESTADÍA*\n"
-    message += f"🏠 *Inmueble:* {data.get('inmueble')}\n"
+    message += f"🏠 *Inmueble:* {data.get('inmueble', 'No especificado')}\n"
     message += f"📅 *Periodo:*\n"
     message += f"_{data.get('fecha_ingreso')} al {data.get('fecha_egreso')}_\n"
     message += f"🌙 *Noches:* {data.get('noches')}\n\n"
     
+    dir_str = (data.get('direccion', '') or data.get('inmueble_direccion', '') or 'Consultar').strip()
+    loc_str = (data.get('localidad', '') or data.get('inmueble_localidad', '') or '').strip()
+    
     message += f"📍 *Ubicación:*\n"
-    message += f"{data.get('direccion', 'Consultar')}\n"
-    message += f"{data.get('localidad', '')}, {data.get('provincia', '')}\n\n"
+    message += f"{dir_str}\n"
+    if loc_str: message += f"{loc_str}\n"
+    
+    if dir_str and dir_str != 'Consultar':
+        encoded_addr = urllib.parse.quote(f"{dir_str}, {loc_str}" if loc_str else dir_str)
+        message += f"📍 *Mapa:* https://www.google.com/maps/search/?api=1&query={encoded_addr}\n"
+    message += "\n"
 
     message += f"🕒 *Check-in:* {data.get('checkin_time', '14:00')} hs\n"
     message += f"🕦 *Check-out:* {data.get('checkout_time', '10:00')} hs\n\n"
@@ -88,32 +95,33 @@ def send_whatsapp_confirmation(phone_number, client_name, data):
         message += f"{sparkles} {data.get('servicios')}\n"
     message += "\n"
     
-    message += f"*RESUMEN FINANCIERO*\n"
-    message += f"• Valor por día: ${int(float(data.get('valor_dia', 0))):,.0f}\n".replace(',', '.')
-    message += f"• Costo Total: ${int(float(data.get('costo_total', 0))):,.0f}\n".replace(',', '.')
+    try:
+        message += f"*RESUMEN FINANCIERO*\n"
+        message += f"• Valor por día: ${float(data.get('valor_dia', 0)):,.2f}\n"
+        message += f"• Costo Total: ${float(data.get('costo_total', 0)):,.2f}\n"
 
-    if float(data.get('descuento_monto', 0)) > 0:
-        message += f"• Descuento: -${int(float(data.get('descuento_monto', 0))):,.0f}\n".replace(',', '.')
-        message += f"• *Precio Final:* ${int(float(data.get('costo_con_descuento', 0))):,.0f}\n".replace(',', '.')
+        if float(data.get('descuento_monto', 0)) > 0:
+            message += f"• Descuento: -${float(data.get('descuento_monto', 0)):,.2f}\n"
+            message += f"• *Precio Final:* ${float(data.get('costo_con_descuento', 0)):,.2f}\n"
 
-    if float(data.get('adelanto', 0)) > 0:
-        message += f"• Adelanto Recibido: ${int(float(data.get('adelanto', 0))):,.0f}\n".replace(',', '.')
-    
-    message += f"\n💰 *SALDO PENDIENTE: ${int(float(data.get('pago_pendiente', 0))):,.0f}*\n".replace(',', '.')
+        if float(data.get('adelanto', 0)) > 0:
+            message += f"• Adelanto Recibido: ${float(data.get('adelanto', 0)):,.2f}\n"
+        
+        message += f"\n💰 *SALDO PENDIENTE: ${float(data.get('pago_pendiente', 0)):,.2f}*\n"
+    except Exception as e:
+        print(f"Error formateando financieros WA: {e}")
+        message += f"\n💰 *SALDO PENDIENTE: ${data.get('pago_pendiente', '0')}*\n"
+        
     message += f"───────────────────\n\n"
-    
     message += f"¡Muchas gracias por elegirnos! {smile}"
 
     if service_type == "Manual":
         return open_whatsapp_chat(phone_number, message)
 
-    def clean_cred(c):
-        return str(c).strip() if c else ""
-
-    api_url = clean_cred(config.get('whatsapp_api_url'))
-    api_key = clean_cred(api_key)
-    acc_id = clean_cred(acc_id)
-    
+    # Limpieza de credenciales
+    api_key = str(config.get('whatsapp_api_key', '')).strip()
+    acc_id = str(config.get('whatsapp_acc_id', '')).strip()
+    api_url = str(config.get('whatsapp_api_url', '')).strip()
     clean_phone = format_argentina_phone(phone_number)
 
     try:
@@ -124,16 +132,13 @@ def send_whatsapp_confirmation(phone_number, client_name, data):
         data_encoded = b""
 
         if service_type == "Twilio":
-            # Twilio requiere prefijo '+' y 'whatsapp:'
-            to_phone = f"+{clean_phone}"
-            from_phone = str(config.get('whatsapp_number', '')).strip()
-            from_phone = from_phone.replace('whatsapp:', '').replace('+', '')
-            tw_from = f"whatsapp:+{from_phone}"
-            tw_to = f"whatsapp:{to_phone}"
+            # Limpiar número remitente: Solo dígitos
+            clean_from = "".join(filter(str.isdigit, str(whatsapp_config)))
+            tw_from = f"whatsapp:+{clean_from}"
+            tw_to = f"whatsapp:+{clean_phone}"
 
             import base64
-            auth_str = f"{acc_id}:{api_key}"
-            auth_b64 = base64.b64encode(auth_str.encode('ascii')).decode('ascii')
+            auth_b64 = base64.b64encode(f"{acc_id}:{api_key}".encode()).decode()
             
             url = f"https://api.twilio.com/2010-04-01/Accounts/{acc_id}/Messages.json"
             payload_data = {"To": tw_to, "From": tw_from, "Body": message}
@@ -154,11 +159,6 @@ def send_whatsapp_confirmation(phone_number, client_name, data):
             data_encoded = json.dumps(payload).encode()
             headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
             
-        elif service_type == "Wati":
-            url = f"{api_url}/api/v1/sendSessionMessage/{clean_phone}?messageText={urllib.parse.quote(message)}"
-            headers = {"Authorization": f"Bearer {api_key}"}
-            data_encoded = b"" 
-            
         elif service_type == "UltraMsg":
             url = f"{api_url}/messages/chat"
             payload = {"token": api_key, "to": clean_phone, "body": message}
@@ -172,26 +172,17 @@ def send_whatsapp_confirmation(phone_number, client_name, data):
         with urllib.request.urlopen(req) as response:
             res_raw = response.read().decode()
             res_json = json.loads(res_raw)
-            print(f"DEBUG: WhatsApp API Success: {res_raw}")
-            
-            # Extraer SID según el proveedor
             sid = None
-            if service_type == "Twilio":
-                sid = res_json.get("sid")
+            if service_type == "Twilio": sid = res_json.get("sid")
             elif service_type == "Meta Cloud API":
-                messages = res_json.get("messages", [])
-                if messages: sid = messages[0].get("id")
-            elif service_type == "UltraMsg":
-                sid = res_json.get("id")
+                msgs = res_json.get("messages", [])
+                if msgs: sid = msgs[0].get("id")
+            elif service_type == "UltraMsg": sid = res_json.get("id")
             
             return sid if sid else True
 
-    except urllib.error.HTTPError as e:
-        error_body = e.read().decode('utf-8')
-        print(f"Error HTTP de WhatsApp ({service_type}) - Código {e.code}: {error_body}")
-        return open_whatsapp_chat(phone_number, message)
     except Exception as e:
-        print(f"Error inesperado en envío WhatsApp ({service_type}): {e}")
+        print(f"Error en envío WhatsApp ({service_type}): {e}")
         return open_whatsapp_chat(phone_number, message)
 
 def send_whatsapp_quotation(phone_number, client_name, data, auto_open=True):
@@ -251,11 +242,12 @@ def send_whatsapp_quotation(phone_number, client_name, data, auto_open=True):
 
 def send_whatsapp_reminder(phone_number, client_name, reservation_data, auto_open=True):
     """
-    Envía un recordatorio de check-in vía WhatsApp.
+    Envía un recordatorio de check-in vía WhatsApp con soporte para múltiples servicios.
     """
     from utils.email_sender import get_smtp_config
     config = get_smtp_config()
     business_name = config.get('business_name', 'Sistema de Reservas')
+    whatsapp_config = config.get('whatsapp_number', '')
     
     # Emojis
     wave = "\U0001F44B"
@@ -272,8 +264,15 @@ def send_whatsapp_reminder(phone_number, client_name, reservation_data, auto_ope
     message += f"{calendar} *Fecha Ingreso:* {reservation_data.get('fecha_ingreso')} (a las {reservation_data.get('checkin_time', '14:00')} hs)\n"
     message += f"🕒 *Fecha Egreso:* {reservation_data.get('fecha_egreso')} (a las {reservation_data.get('checkout_time', '10:00')} hs)\n\n"
     
-    message += f"🏠 *Dirección:* {reservation_data.get('inmueble_direccion')}, {reservation_data.get('inmueble_localidad')}\n"
-    message += f"📍 *Ver en Google Maps:* https://www.google.com/maps/search/?api=1&query={reservation_data.get('inmueble_direccion').replace(' ', '+')}+{reservation_data.get('inmueble_localidad').replace(' ', '+')}\n\n"
+    dir_str = (reservation_data.get('inmueble_direccion', '') or reservation_data.get('direccion', '')).strip()
+    loc_str = (reservation_data.get('inmueble_localidad', '') or reservation_data.get('localidad', '')).strip()
+    
+    if dir_str:
+        full_addr = f"{dir_str}, {loc_str}" if loc_str else dir_str
+        message += f"🏠 *Dirección:* {full_addr}\n"
+        # Codificar correctamente la URL para evitar fallos en Twilio
+        encoded_addr = urllib.parse.quote(full_addr)
+        message += f"📍 *Ver en Google Maps:* https://www.google.com/maps/search/?api=1&query={encoded_addr}\n\n"
     
     if float(reservation_data.get('pago_pendiente', 0)) > 0:
         message += f"{money} *Saldo Pendiente:* ${float(reservation_data.get('pago_pendiente', 0)):,.2f}\n\n"
@@ -283,13 +282,13 @@ def send_whatsapp_reminder(phone_number, client_name, reservation_data, auto_ope
 
     service_type = config.get('whatsapp_service_type', 'Manual')
     if service_type == "Manual":
-        if not auto_open: return False # En automatización no podemos enviar manual
+        if not auto_open: return False
         return open_whatsapp_chat(phone_number, message)
     
-    # Si es API, usamos la misma lógica que confirmation (podríamos refactorizar pero por ahora es más seguro así)
-    api_key = config.get('whatsapp_api_key')
-    acc_id = config.get('whatsapp_acc_id')
-    api_url = config.get('whatsapp_api_url')
+    # Limpieza de credenciales
+    api_key = str(config.get('whatsapp_api_key', '')).strip()
+    acc_id = str(config.get('whatsapp_acc_id', '')).strip()
+    api_url = str(config.get('whatsapp_api_url', '')).strip()
     clean_phone = format_argentina_phone(phone_number)
     
     try:
@@ -299,20 +298,29 @@ def send_whatsapp_reminder(phone_number, client_name, reservation_data, auto_ope
         data_encoded = b""
 
         if service_type == "Twilio":
-            tw_from = f"whatsapp:+{str(config.get('whatsapp_number', '')).strip().replace('+', '')}"
+            # Remitente Twilio
+            clean_from = "".join(filter(str.isdigit, str(whatsapp_config)))
+            tw_from = f"whatsapp:+{clean_from}"
             tw_to = f"whatsapp:+{clean_phone}"
+            
             import base64
             auth_b64 = base64.b64encode(f"{acc_id}:{api_key}".encode()).decode()
             url = f"https://api.twilio.com/2010-04-01/Accounts/{acc_id}/Messages.json"
             payload = {"To": tw_to, "From": tw_from, "Body": message}
             data_encoded = urllib.parse.urlencode(payload).encode('utf-8')
             headers = {"Authorization": f"Basic {auth_b64}", "Content-Type": "application/x-www-form-urlencoded"}
+            
         elif service_type == "Meta Cloud API":
             url = f"https://graph.facebook.com/v18.0/{acc_id}/messages"
             payload = {"messaging_product": "whatsapp", "to": clean_phone, "type": "text", "text": {"body": message}}
             data_encoded = json.dumps(payload).encode()
             headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
-        # ... otros servicios ...
+            
+        elif service_type == "UltraMsg":
+            url = f"{api_url}/messages/chat"
+            payload = {"token": api_key, "to": clean_phone, "body": message}
+            data_encoded = urllib.parse.urlencode(payload).encode()
+            headers = {"Content-Type": "application/x-www-form-urlencoded"}
         else:
             if not auto_open: return False
             return open_whatsapp_chat(phone_number, message)
@@ -321,14 +329,12 @@ def send_whatsapp_reminder(phone_number, client_name, reservation_data, auto_ope
         with urllib.request.urlopen(req) as response:
             res_raw = response.read().decode()
             res_json = json.loads(res_raw)
-            
-            # Extraer SID según el proveedor
             sid = None
-            if service_type == "Twilio":
-                sid = res_json.get("sid")
+            if service_type == "Twilio": sid = res_json.get("sid")
             elif service_type == "Meta Cloud API":
-                messages = res_json.get("messages", [])
-                if messages: sid = messages[0].get("id")
+                msgs = res_json.get("messages", [])
+                if msgs: sid = msgs[0].get("id")
+            elif service_type == "UltraMsg": sid = res_json.get("id")
             
             return sid if sid else True
     except Exception as e:

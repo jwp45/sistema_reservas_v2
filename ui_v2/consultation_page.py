@@ -832,14 +832,45 @@ class ConsultationPage(QWidget):
             return
 
         try:
+            status = self._get_day_status(d)
+            
+            # Si no hay fecha de inicio seleccionada o si ya había un rango completo
             if not self.start_date or (self.start_date and self.end_date):
+                # REGLA: No se puede iniciar en un día Ocupado o de Ingreso (alguien más entra)
+                if status in ["ocupado", "ingreso", "transicion"]:
+                    QMessageBox.warning(self, "Fecha no disponible", 
+                                        "No puede iniciar una reserva en una fecha ocupada o de ingreso de otro huésped.")
+                    self.reset_selection()
+                    return
+                
                 self.start_date = d
                 self.end_date = None
             else:
+                # Si estamos seleccionando la fecha de fin
                 if d <= self.start_date:
+                    # Si elige una fecha anterior a la de inicio, la tomamos como nueva fecha de inicio
+                    if status in ["ocupado", "ingreso", "transicion"]:
+                        QMessageBox.warning(self, "Fecha no disponible", 
+                                            "No puede iniciar una reserva en una fecha ocupada o de ingreso de otro huésped.")
+                        self.reset_selection()
+                        return
                     self.start_date = d
                     self.end_date = None
                 else:
+                    # REGLA: No se puede terminar en un día Ocupado o de Egreso (alguien más sale)
+                    if status in ["ocupado", "egreso", "transicion"]:
+                        QMessageBox.warning(self, "Fecha no disponible", 
+                                            "No puede finalizar una reserva en una fecha ocupada o de egreso de otro huésped.")
+                        self.reset_selection()
+                        return
+                    
+                    # REGLA: El rango completo debe estar disponible
+                    if not self.db.is_range_available(self.selected_property[0], self.start_date, d):
+                        QMessageBox.warning(self, "Rango no disponible", 
+                                            "El periodo seleccionado se superpone con una reserva existente.")
+                        self.reset_selection()
+                        return
+                        
                     self.end_date = d
                     
             self.update_pricing()

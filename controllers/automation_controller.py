@@ -31,6 +31,20 @@ class AutomationController:
         error_count = 0
 
         for res in pending:
+            # Enriquecer datos con servicios
+            servs = self.db.get_property_services(res.get('id_inmueble'))
+            res['servicios'] = ", ".join([f"{s[0]} {s[1]}" for s in servs]) if servs else "No especificados"
+
+            # El sender espera 'inmueble_nombre', 'inmueble_direccion' y 'inmueble_localidad'
+            # pero Database.get_pending_reminders ya los trae así. 
+            # Sin embargo, nos aseguramos de que no falten por si acaso
+            if 'inmueble' in res and 'inmueble_nombre' not in res:
+                res['inmueble_nombre'] = res['inmueble']
+            if 'direccion' in res and 'inmueble_direccion' not in res:
+                res['inmueble_direccion'] = res['direccion']
+            if 'localidad' in res and 'inmueble_localidad' not in res:
+                res['inmueble_localidad'] = res['localidad']
+
             client_email = res.get('cliente_email')
             client_phone = res.get('cliente_telefono')
             client_name = f"{res.get('cliente_nombre')} {res.get('cliente_apellido')}"

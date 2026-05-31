@@ -1323,7 +1323,7 @@ class Database:
             cursor = self.connection.cursor(dictionary=True, buffered=True)
             query = """SELECT r.*, c.nombre as cliente_nombre, c.apellido as cliente_apellido, c.email as cliente_email, c.telefono as cliente_telefono,
                                i.nombre as inmueble_nombre, i.direccion as inmueble_direccion, i.localidad as inmueble_localidad,
-                               i.checkin_time, i.checkout_time
+                               i.checkin_time, i.checkout_time, i.dormitorios, i.camas, i.baños
                         FROM reservas r
                        JOIN clientes c ON r.id_cliente = c.id_clientes
                        JOIN inmuebles i ON r.id_inmueble = i.id_inmueble
