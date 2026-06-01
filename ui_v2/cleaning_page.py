@@ -70,6 +70,7 @@ class CleaningPage(QWidget):
         self.table_staff.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
         self.table_staff.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeToContents)
         self.table_staff.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeToContents)
+        self.table_staff.verticalHeader().setDefaultSectionSize(45)
         self.table_staff.setStyleSheet("border: none; background-color: #f8f9fa;")
         left_layout.addWidget(self.table_staff)
         
@@ -113,9 +114,34 @@ class CleaningPage(QWidget):
         self.table_pending = QTableWidget(0, 5)
         self.table_pending.setHorizontalHeaderLabels(["Inmueble", "Check-out", "Tarifa/H", "Asignar A", "Acción"])
         self.table_pending.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.table_pending.verticalHeader().setDefaultSectionSize(50)
+        self.table_pending.setSelectionBehavior(QTableWidget.SelectRows)
+        self.table_pending.setSelectionMode(QTableWidget.SingleSelection)
         self.table_pending.setStyleSheet("""
-            QTableWidget { border: none; gridline-color: #f1f3f5; }
-            QHeaderView::section { background-color: #f8f9fa; padding: 10px; font-weight: bold; border: none; }
+            QTableWidget { 
+                border: none; 
+                gridline-color: #f1f3f5; 
+                background-color: white; 
+                color: #2c3e50;
+                selection-background-color: #ebf5fb;
+                selection-color: #2980b9;
+            }
+            QTableWidget::item { padding: 10px; border-bottom: 1px solid #f1f3f5; }
+            QTableWidget::item:hover { background-color: #f8f9fa; }
+            QHeaderView::section { 
+                background-color: #f8f9fa; 
+                padding: 10px; 
+                font-weight: bold; 
+                border: none; 
+                color: #7f8c8d;
+                border-bottom: 2px solid #3498db;
+            }
+            QLineEdit, QComboBox {
+                border: 1px solid #d1d8e0;
+                border-radius: 4px;
+                padding: 5px;
+                height: 30px;
+            }
         """)
         right_layout.addWidget(self.table_pending)
 
@@ -127,9 +153,26 @@ class CleaningPage(QWidget):
         self.table_history = QTableWidget(0, 6)
         self.table_history.setHorizontalHeaderLabels(["Inmueble", "Personal", "Horas", "Total", "Fecha", "Pago"])
         self.table_history.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.table_history.verticalHeader().setDefaultSectionSize(50)
         self.table_history.setStyleSheet("""
-            QTableWidget { border: none; gridline-color: #f1f3f5; }
-            QHeaderView::section { background-color: #f8f9fa; padding: 10px; font-weight: bold; border: none; }
+            QTableWidget { 
+                border: none; 
+                gridline-color: #f1f3f5; 
+                background-color: white; 
+                color: #2c3e50;
+                selection-background-color: #ebf5fb;
+                selection-color: #2980b9;
+            }
+            QTableWidget::item { padding: 10px; border-bottom: 1px solid #f1f3f5; }
+            QTableWidget::item:hover { background-color: #f8f9fa; }
+            QHeaderView::section { 
+                background-color: #f8f9fa; 
+                padding: 10px; 
+                font-weight: bold; 
+                border: none; 
+                color: #7f8c8d;
+                border-bottom: 2px solid #27ae60;
+            }
         """)
         right_layout.addWidget(self.table_history)
 
@@ -195,7 +238,7 @@ class CleaningPage(QWidget):
             
             # Combo Personal
             combo_staff = QComboBox()
-            combo_staff.addItem("Seleccionar...", None)
+            combo_staff.addItem("📢 TODOS", None)
             for sid, name in staff_names.items():
                 combo_staff.addItem(name, sid)
             self.table_pending.setCellWidget(row, 3, combo_staff)
@@ -203,14 +246,22 @@ class CleaningPage(QWidget):
             # Botón Enviar / Estado
             status = p.get('task_status')
             if status:
-                btn_send = QPushButton(f" {status.upper()}")
-                btn_send.setEnabled(False)
-                btn_send.setStyleSheet("background-color: #ecf0f1; color: #2c3e50; font-weight: bold; border: 1px solid #bdc3c7;")
+                label_text = status.upper()
+                if not p.get('staff_name'):
+                    label_text = "📢 TODOS"
                 
-                # Deshabilitar edición si ya está asignado
+                btn_send = QPushButton(f" {label_text}")
+                btn_send.setEnabled(False)
+                
+                if not p.get('staff_name'):
+                    btn_send.setStyleSheet("background-color: #f1c40f; color: #2c3e50; font-weight: bold; border: 1px solid #f39c12;")
+                else:
+                    btn_send.setStyleSheet("background-color: #ecf0f1; color: #2c3e50; font-weight: bold; border: 1px solid #bdc3c7;")
+                
+                # Deshabilitar edición si ya está asignado o emitido
                 fee_edit.setReadOnly(True)
                 fee_edit.setStyleSheet("background-color: #f8f9fa; border: none;")
-                combo_staff.setCurrentText(p.get('staff_name', "Seleccionar..."))
+                combo_staff.setCurrentText(p.get('staff_name', "📢 TODOS"))
                 combo_staff.setEnabled(False)
             else:
                 btn_send = QPushButton("Enviar a App")
@@ -273,10 +324,7 @@ class CleaningPage(QWidget):
         
         fee = float(fee_widget.text() or 0)
         staff_id = staff_widget.currentData()
-        
-        if not staff_id:
-            QMessageBox.warning(self, "Atención", "Debe seleccionar un empleado.")
-            return
+        staff_name = staff_widget.currentText()
             
         task_data = {
             "id_inmueble": prop_data['id_inmuebles'],
@@ -286,8 +334,9 @@ class CleaningPage(QWidget):
         }
         
         if self.db.assign_cleaning_task(task_data):
+            msg = f"Limpieza enviada a TODOS." if not staff_id else f"Limpieza asignada a {staff_name}."
             QMessageBox.information(self, "Tarea Enviada", 
-                                    f"Limpieza asignada a {staff_widget.currentText()}.\nPróximamente se sincronizará con la App.")
+                                    f"{msg}\nPróximamente se sincronizará con la App.")
             self.load_data()
         else:
             QMessageBox.critical(self, "Error", "No se pudo asignar la tarea.")
