@@ -250,14 +250,30 @@ class PropertyListPage(QWidget):
     def delete_property(self, p):
         prop_id = p[0]
         prop_name = p[1]
-        reply = QMessageBox.question(self, "Confirmar Eliminación", 
+
+        # 1. Verificar si tiene reservas
+        if not self.db.connect(): return
+        count = self.db.count_property_reservations(prop_id)
+
+        if count > 0:
+            msg = f"El inmueble '{prop_name}' (ID: {prop_id}) tiene {count} reserva(s) asociada(s).\n\n"
+            msg += "Para mantener la integridad histórica, no puede eliminar un inmueble con reservas activas o pasadas.\n"
+            msg += "Debe eliminar primero todas las reservas asociadas a este inmueble."
+
+            QMessageBox.warning(self, "Eliminación Bloqueada", msg)
+            return
+
+        # 2. Confirmación estándar
+        reply = QMessageBox.question(self, "Confirmar Eliminación",
                                    f"¿Está seguro de eliminar el inmueble #{prop_id} ({prop_name})?",
                                    QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
-        
+
         if reply == QMessageBox.Yes:
             if self.db.delete_property(prop_id):
                 self.load_data()
                 QMessageBox.information(self, "Éxito", "Inmueble eliminado correctamente.")
+            else:
+                QMessageBox.warning(self, "Error", "No se pudo eliminar el inmueble.")
 
     def open_gallery(self, p):
         if not self.db.connect(): return

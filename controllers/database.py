@@ -94,9 +94,9 @@ class Database:
                     estado ENUM('pendiente', 'en_proceso', 'completada', 'verificada') DEFAULT 'pendiente',
                     observaciones TEXT,
                     sincronizado TINYINT(1) DEFAULT 0,
-                    FOREIGN KEY (id_inmueble) REFERENCES inmuebles(id_inmueble),
-                    FOREIGN KEY (id_reserva) REFERENCES reservas(id_reserva),
-                    FOREIGN KEY (id_personal) REFERENCES personal_limpieza(id_personal)
+                    FOREIGN KEY (id_inmueble) REFERENCES inmuebles(id_inmueble) ON DELETE CASCADE,
+                    FOREIGN KEY (id_reserva) REFERENCES reservas(id_reserva) ON DELETE CASCADE,
+                    FOREIGN KEY (id_personal) REFERENCES personal_limpieza(id_personal) ON DELETE SET NULL
                 )
             """)
 
@@ -550,6 +550,19 @@ class Database:
         finally:
             if cursor: cursor.close()
 
+    def get_property_details(self, property_id):
+        """Retorna un diccionario con los detalles del inmueble."""
+        if not self.connect(): return None
+        try:
+            cursor = self.connection.cursor(dictionary=True)
+            cursor.execute("SELECT * FROM inmuebles WHERE id_inmueble = %s", (property_id,))
+            return cursor.fetchone()
+        except Exception as e:
+            print(f"Error en get_property_details: {e}")
+            return None
+        finally:
+            if cursor: cursor.close()
+
     def get_all_properties(self):
         cursor = None
         try:
@@ -600,6 +613,32 @@ class Database:
         except Exception as e:
             print(f"Error al guardar servicios del inmueble: {e}")
             return False
+        finally:
+            if cursor: cursor.close()
+
+    def count_client_reservations(self, client_id):
+        """Cuenta cuántas reservas tiene un cliente."""
+        cursor = None
+        try:
+            cursor = self.connection.cursor(buffered=True)
+            cursor.execute("SELECT COUNT(*) FROM reservas WHERE id_cliente = %s", (client_id,))
+            return cursor.fetchone()[0]
+        except Exception as e:
+            print(f"Error al contar reservas del cliente: {e}")
+            return 0
+        finally:
+            if cursor: cursor.close()
+
+    def count_property_reservations(self, property_id):
+        """Cuenta cuántas reservas tiene un inmueble."""
+        cursor = None
+        try:
+            cursor = self.connection.cursor(buffered=True)
+            cursor.execute("SELECT COUNT(*) FROM reservas WHERE id_inmueble = %s", (property_id,))
+            return cursor.fetchone()[0]
+        except Exception as e:
+            print(f"Error al contar reservas del inmueble: {e}")
+            return 0
         finally:
             if cursor: cursor.close()
 
@@ -793,8 +832,10 @@ class Database:
                               i.nombre, r.fecha_ingreso, r.fecha_egreso, r.noches,
                               r.valor_dia, r.costo_total, r.costo_con_descuento,
                               r.adelanto, r.pago_pendiente, r.provincia, r.id_inmueble,
-                              r.fecha_creacion, r.wa_last_status, r.checkin_status
+                              r.fecha_creacion, r.wa_last_status, r.checkin_status,
+                              r.checkout_status
                        FROM reservas r
+
                        JOIN clientes c ON r.id_cliente = c.id_clientes
                        JOIN inmuebles i ON r.id_inmueble = i.id_inmueble
                        ORDER BY r.id_reserva DESC"""
@@ -830,6 +871,9 @@ class Database:
         cursor = None
         try:
             cursor = self.connection.cursor(buffered=True)
+            # 1. Eliminar tareas de limpieza asociadas (para evitar error de FK)
+            cursor.execute("DELETE FROM tareas_limpieza WHERE id_reserva = %s", (reservation_id,))
+            # 2. Eliminar la reserva (historial_pagos tiene ON DELETE CASCADE, así que se borra solo)
             cursor.execute("DELETE FROM reservas WHERE id_reserva = %s", (reservation_id,))
             self.connection.commit()
             return True
@@ -1662,7 +1706,7 @@ class Database:
             # Buscamos la última reserva de cada inmueble que ya terminó o se marcó check-out
             # y que no tenga una tarea de limpieza completada para ESA reserva.
             query = """
-                SELECT p.*, r.fecha_egreso, r.id_reserva, t.estado as task_status, pl.nombre as staff_name
+                SELECT p.*, r.fecha_egreso, r.id_reserva, t.id_tarea, t.estado as task_status, pl.nombre as staff_name, t.id_personal as assigned_staff_id
                 FROM inmuebles p
                 JOIN reservas r ON p.id_inmueble = r.id_inmueble
                 LEFT JOIN tareas_limpieza t ON p.id_inmueble = t.id_inmueble AND r.id_reserva = t.id_reserva
@@ -1691,6 +1735,35 @@ class Database:
             return True
         except Exception as e:
             print(f"Error en assign_cleaning_task: {e}")
+            return False
+
+    def update_cleaning_task(self, data):
+        """Actualiza una tarea existente (re-asignación)"""
+        if not self.connect(): return False
+        try:
+            cursor = self.connection.cursor()
+            query = """UPDATE tareas_limpieza 
+                       SET id_personal = %s, tarifa_hora = %s, estado = 'pendiente'
+                       WHERE id_inmueble = %s AND id_reserva = %s AND estado != 'completada'"""
+            cursor.execute(query, (data['id_personal'], data['pago'], 
+                                   data['id_inmueble'], data['id_reserva']))
+            self.connection.commit()
+            return True
+        except Exception as e:
+            print(f"Error en update_cleaning_task: {e}")
+            return False
+
+    def delete_cleaning_task(self, id_inmueble, id_reserva):
+        """Elimina una tarea de limpieza (para sacarla de la app)"""
+        if not self.connect(): return False
+        try:
+            cursor = self.connection.cursor()
+            query = "DELETE FROM tareas_limpieza WHERE id_inmueble = %s AND id_reserva = %s AND estado != 'completada'"
+            cursor.execute(query, (id_inmueble, id_reserva))
+            self.connection.commit()
+            return True
+        except Exception as e:
+            print(f"Error en delete_cleaning_task: {e}")
             return False
 
     def complete_cleaning_task(self, id_tarea, horas, observaciones=""):
@@ -1754,6 +1827,23 @@ class Database:
             return cursor.fetchall()
         except Exception as e:
             print(f"Error en get_cleaning_debts: {e}")
+            return []
+
+    def get_staff_pending_tasks(self, id_personal):
+        """Retorna las tareas finalizadas pero no pagadas de un empleado"""
+        if not self.connect(): return []
+        try:
+            cursor = self.connection.cursor(dictionary=True)
+            query = """
+                SELECT t.*, p.nombre as property_name
+                FROM tareas_limpieza t
+                JOIN inmuebles p ON t.id_inmueble = p.id_inmueble
+                WHERE t.id_personal = %s AND t.estado = 'completada' AND t.pagado = 0
+            """
+            cursor.execute(query, (id_personal,))
+            return cursor.fetchall()
+        except Exception as e:
+            print(f"Error en get_staff_pending_tasks: {e}")
             return []
 
     def mark_cleaning_task_as_paid(self, id_tarea):

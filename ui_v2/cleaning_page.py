@@ -4,9 +4,10 @@ from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
                              QLineEdit, QPushButton, QFrame, QGridLayout, 
                              QScrollArea, QComboBox, QTableWidget, QTableWidgetItem,
                              QHeaderView, QMessageBox, QDialog, QFormLayout)
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, Signal, QTimer
 from PySide6.QtGui import QColor, QFont, QIcon
 from controllers.database import Database
+from controllers.sync_controller import SyncController
 
 class AddStaffDialog(QDialog):
     def __init__(self, parent=None):
@@ -42,12 +43,102 @@ class AddStaffDialog(QDialog):
             "pin": self.edit_pin.text().strip()
         }
 
+class StaffPaymentDialog(QDialog):
+    def __init__(self, staff_id, staff_name, tasks, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle(f"Liquidar Pagos: {staff_name}")
+        self.setFixedWidth(500)
+        self.tasks = tasks
+        self.total = sum(float(t['pago_servicio']) for t in tasks)
+        self.init_ui()
+
+    def init_ui(self):
+        layout = QVBoxLayout(self)
+        
+        lbl_info = QLabel(f"Resumen de tareas pendientes para {self.windowTitle().split(': ')[1]}:")
+        lbl_info.setStyleSheet("font-weight: bold; color: #2c3e50;")
+        layout.addWidget(lbl_info)
+        
+        self.table = QTableWidget(len(self.tasks), 3)
+        self.table.setHorizontalHeaderLabels(["Inmueble", "Fecha", "Monto"])
+        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.table.setStyleSheet("background-color: white; border-radius: 5px;")
+        
+        for i, t in enumerate(self.tasks):
+            self.table.setItem(i, 0, QTableWidgetItem(t['property_name']))
+            fecha = t['fecha_finalizacion'].strftime("%d/%m/%Y") if t['fecha_finalizacion'] else "-"
+            self.table.setItem(i, 1, QTableWidgetItem(fecha))
+            monto_item = QTableWidgetItem(f"$ {float(t['pago_servicio']):,.2f}")
+            monto_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            self.table.setItem(i, 2, monto_item)
+            
+        layout.addWidget(self.table)
+        
+        total_frame = QFrame()
+        total_frame.setStyleSheet("background-color: #f8f9fa; border-radius: 10px; padding: 10px;")
+        total_layout = QHBoxLayout(total_frame)
+        total_layout.addWidget(QLabel("TOTAL A LIQUIDAR:"))
+        lbl_total = QLabel(f"$ {self.total:,.2f}")
+        lbl_total.setStyleSheet("font-size: 20px; font-weight: bold; color: #27ae60;")
+        total_layout.addStretch()
+        total_layout.addWidget(lbl_total)
+        layout.addWidget(total_frame)
+        
+        btns = QHBoxLayout()
+        btn_confirm = QPushButton("Confirmar Pago Total")
+        btn_confirm.setStyleSheet("background-color: #27ae60; color: white; font-weight: bold; padding: 10px; border-radius: 5px;")
+        btn_confirm.clicked.connect(self.accept)
+        btn_cancel = QPushButton("Cancelar")
+        btn_cancel.clicked.connect(self.reject)
+        btns.addWidget(btn_cancel)
+        btns.addWidget(btn_confirm)
+        layout.addLayout(btns)
+
 class CleaningPage(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.db = Database()
+        self.sync = SyncController()
         self.init_ui()
         self.load_data()
+        
+        # Iniciar listener de Firebase
+        if self.sync.initialized:
+            self.sync.start_listener(self.on_cloud_task_updated)
+            self.lbl_sync_status.setText("☁️ Conectado a Firestore (Real-time)")
+            self.lbl_sync_status.setStyleSheet("color: #27ae60; font-weight: bold; border: none;")
+            # Sincronizar personal al iniciar
+            staff = self.db.get_cleaning_staff(active_only=False)
+            self.sync.sync_staff(staff)
+        else:
+            self.lbl_sync_status.setText("⚠️ Firebase no configurado")
+            self.lbl_sync_status.setStyleSheet("color: #e74c3c; font-weight: bold; border: none;")
+
+    def on_cloud_task_updated(self, doc_id, data):
+        """Callback cuando una tarea cambia en Firebase (App Android)"""
+        status = data.get('status')
+        print(f"DEBUG: Tarea {doc_id} actualizada a {status}")
+        
+        if status == 'finished':
+            # Extraer IDs de doc_id (task_IDPROP_IDRES)
+            parts = doc_id.split('_')
+            if len(parts) >= 3:
+                # prop_id = parts[1], res_id = parts[2]
+                # Buscar id_tarea local
+                if not self.db.connect(): return
+                cursor = self.db.connection.cursor(dictionary=True)
+                cursor.execute("SELECT id_tarea FROM tareas_limpieza WHERE id_inmueble=%s AND id_reserva=%s AND estado='pendiente'", 
+                             (parts[1], parts[2]))
+                task = cursor.fetchone()
+                if task:
+                    # Completar tarea local
+                    self.db.complete_cleaning_task(
+                        task['id_tarea'], 
+                        data.get('hours', 0), 
+                        data.get('observations', '')
+                    )
+                    # Actualizar UI desde el hilo principal
+                    QTimer.singleShot(0, self.load_data)
 
     def init_ui(self):
         self.main_layout = QHBoxLayout(self)
@@ -264,32 +355,54 @@ class CleaningPage(QWidget):
                 combo_staff.addItem(name, sid)
             self.table_pending.setCellWidget(row, 3, combo_staff)
             
-            # Botón Enviar / Estado
+            # Botón Enviar / Estado / Re-asignar
             status = p.get('task_status')
             if status:
                 label_text = status.upper()
                 if not p.get('staff_name'):
-                    label_text = "📢 TODOS"
+                    label_text = "📢 BROADCAST"
                 
-                btn_send = QPushButton(f" {label_text}")
-                btn_send.setEnabled(False)
+                # Layout para acciones de tarea existente
+                actions_layout = QHBoxLayout()
+                actions_layout.setContentsMargins(0, 0, 0, 0)
                 
-                if not p.get('staff_name'):
-                    btn_send.setStyleSheet("background-color: #f1c40f; color: #2c3e50; font-weight: bold; border: 1px solid #f39c12;")
+                btn_reassign = QPushButton("🔄 Re-asignar")
+                btn_reassign.setToolTip("Actualizar asignación o tarifa")
+                btn_reassign.setStyleSheet("background-color: #3498db; color: white; font-weight: bold; border-radius: 4px; padding: 5px;")
+                btn_reassign.clicked.connect(lambda checked=False, r=row, data=p: self.reassign_task(r, data))
+                
+                btn_cancel = QPushButton("❌ Anular")
+                btn_cancel.setToolTip("Quitar de la App y borrar asignación")
+                btn_cancel.setStyleSheet("background-color: #e74c3c; color: white; font-weight: bold; border-radius: 4px; padding: 5px;")
+                btn_cancel.clicked.connect(lambda checked=False, data=p: self.cancel_task(data))
+                
+                if status in ['en_proceso', 'completada']:
+                    btn_reassign.setEnabled(False)
+                    btn_cancel.setEnabled(False)
+                    btn_reassign.setStyleSheet("background-color: #bdc3c7; color: white; border-radius: 4px;")
+                    btn_cancel.setStyleSheet("background-color: #bdc3c7; color: white; border-radius: 4px;")
+                    fee_edit.setReadOnly(True)
+                    combo_staff.setEnabled(False)
+                
+                actions_layout.addWidget(btn_reassign)
+                actions_layout.addWidget(btn_cancel)
+                
+                widget = QWidget()
+                widget.setLayout(actions_layout)
+                self.table_pending.setCellWidget(row, 4, widget)
+                
+                # Seleccionar el personal actual en el combo
+                current_staff_id = p.get('assigned_staff_id')
+                if current_staff_id:
+                    index = combo_staff.findData(current_staff_id)
+                    if index >= 0: combo_staff.setCurrentIndex(index)
                 else:
-                    btn_send.setStyleSheet("background-color: #ecf0f1; color: #2c3e50; font-weight: bold; border: 1px solid #bdc3c7;")
-                
-                # Deshabilitar edición si ya está asignado o emitido
-                fee_edit.setReadOnly(True)
-                fee_edit.setStyleSheet("background-color: #f8f9fa; border: none;")
-                combo_staff.setCurrentText(p.get('staff_name', "📢 TODOS"))
-                combo_staff.setEnabled(False)
+                    combo_staff.setCurrentIndex(0) # TODOS
             else:
                 btn_send = QPushButton("Enviar a App")
                 btn_send.setStyleSheet("background-color: #27ae60; color: white; font-weight: bold; border-radius: 4px;")
                 btn_send.clicked.connect(lambda checked=False, r=row, data=p: self.assign_task(r, data))
-            
-            self.table_pending.setCellWidget(row, 4, btn_send)
+                self.table_pending.setCellWidget(row, 4, btn_send)
 
         # 3. Cargar Historial
         completed = self.db.get_completed_cleanings()
@@ -322,17 +435,25 @@ class CleaningPage(QWidget):
             data = dialog.get_data()
             if data['nombre'] and data['pin']:
                 if self.db.add_cleaning_staff(data):
+                    # Sincronizar con Firebase
+                    if self.sync.initialized:
+                        staff = self.db.get_cleaning_staff(active_only=False)
+                        self.sync.sync_staff(staff)
+                    
                     QMessageBox.information(self, "Éxito", "Personal añadido correctamente.")
                     self.load_data()
                 else:
                     QMessageBox.critical(self, "Error", "No se pudo añadir al personal.")
 
     def pay_staff(self, staff_id, name, amount):
-        reply = QMessageBox.question(self, "Confirmar Pago", 
-                                   f"¿Confirma que ha pagado $ {amount:,.2f} a {name}?\nSe marcarán todas sus tareas como pagadas.",
-                                   QMessageBox.Yes | QMessageBox.No)
-        
-        if reply == QMessageBox.Yes:
+        # Obtener detalle de tareas para el diálogo
+        tasks = self.db.get_staff_pending_tasks(staff_id)
+        if not tasks:
+            QMessageBox.information(self, "Sin Tareas", "No hay tareas pendientes de pago para este empleado.")
+            return
+            
+        dialog = StaffPaymentDialog(staff_id, name, tasks, self)
+        if dialog.exec():
             if self.db.mark_all_staff_tasks_as_paid(staff_id):
                 QMessageBox.information(self, "Éxito", f"Pago registrado para {name}.")
                 self.load_data()
@@ -343,21 +464,77 @@ class CleaningPage(QWidget):
         fee_widget = self.table_pending.cellWidget(row_idx, 2)
         staff_widget = self.table_pending.cellWidget(row_idx, 3)
         
-        fee = float(fee_widget.text() or 0)
+        try:
+            fee = float(fee_widget.text() or 0)
+        except:
+            QMessageBox.warning(self, "Error", "La tarifa debe ser un número válido.")
+            return
+
         staff_id = staff_widget.currentData()
         staff_name = staff_widget.currentText()
             
         task_data = {
-            "id_inmueble": prop_data['id_inmuebles'],
+            "id_inmueble": prop_data['id_inmueble'],
             "id_reserva": prop_data['id_reserva'],
             "id_personal": staff_id,
             "pago": fee
         }
         
         if self.db.assign_cleaning_task(task_data):
+            # Subir a Firebase
+            if self.sync.initialized:
+                self.sync.upload_task(task_data)
+            
             msg = f"Limpieza enviada a TODOS." if not staff_id else f"Limpieza asignada a {staff_name}."
             QMessageBox.information(self, "Tarea Enviada", 
-                                    f"{msg}\nPróximamente se sincronizará con la App.")
+                                    f"{msg}\nSe sincronizará con la App en tiempo real.")
             self.load_data()
         else:
             QMessageBox.critical(self, "Error", "No se pudo asignar la tarea.")
+
+    def reassign_task(self, row_idx, prop_data):
+        fee_widget = self.table_pending.cellWidget(row_idx, 2)
+        staff_widget = self.table_pending.cellWidget(row_idx, 3)
+        
+        try:
+            fee = float(fee_widget.text() or 0)
+        except:
+            QMessageBox.warning(self, "Error", "La tarifa debe ser un número válido.")
+            return
+
+        staff_id = staff_widget.currentData()
+        staff_name = staff_widget.currentText()
+            
+        task_data = {
+            "id_inmueble": prop_data['id_inmueble'],
+            "id_reserva": prop_data['id_reserva'],
+            "id_personal": staff_id,
+            "pago": fee
+        }
+        
+        if self.db.update_cleaning_task(task_data):
+            # Actualizar en Firebase
+            if self.sync.initialized:
+                self.sync.upload_task(task_data)
+            
+            QMessageBox.information(self, "Tarea Actualizada", 
+                                    f"La tarea ha sido re-asignada correctamente.")
+            self.load_data()
+        else:
+            QMessageBox.critical(self, "Error", "No se pudo actualizar la tarea.")
+
+    def cancel_task(self, prop_data):
+        reply = QMessageBox.question(self, "Anular Tarea", 
+                                   "¿Desea quitar esta tarea de la App y borrar la asignación actual?",
+                                   QMessageBox.Yes | QMessageBox.No)
+        
+        if reply == QMessageBox.Yes:
+            if self.db.delete_cleaning_task(prop_data['id_inmueble'], prop_data['id_reserva']):
+                # Eliminar de Firebase
+                if self.sync.initialized:
+                    self.sync.delete_task(prop_data['id_inmueble'], prop_data['id_reserva'])
+                
+                QMessageBox.information(self, "Tarea Anulada", "La tarea ha sido retirada de la App.")
+                self.load_data()
+            else:
+                QMessageBox.critical(self, "Error", "No se pudo anular la tarea.")

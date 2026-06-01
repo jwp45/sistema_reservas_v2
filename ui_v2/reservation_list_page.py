@@ -13,6 +13,8 @@ from ui_v2.calendar_dialog import ModernCalendarDialog
 from PySide6.QtWidgets import QComboBox
 
 class ReservationCard(QFrame):
+    status_changed = Signal()
+
     def __init__(self, data, parent=None):
         super().__init__(parent)
         self.data = data
@@ -166,11 +168,50 @@ class ReservationCard(QFrame):
         self.btn_delete = create_action_btn("🗑️", "#f8d7da", "#f5c6cb", 35)
         self.btn_delete.setStyleSheet(self.btn_delete.styleSheet().replace("white", "#e74c3c")) # Text color for delete
         
+        # Check-In / Check-Out Buttons
+        is_checkout = bool(self.data[17]) if len(self.data) > 17 else False
+        
+        if not is_ingresado:
+            self.btn_checkin = create_action_btn("➕ CHECK-IN", "#e67e22", "#d35400", 110)
+            self.btn_checkin.clicked.connect(self.do_checkin)
+            btn_layout.addWidget(self.btn_checkin)
+        elif not is_checkout:
+            self.btn_checkout = create_action_btn("➖ CHECK-OUT", "#c0392b", "#a93226", 110)
+            self.btn_checkout.clicked.connect(self.do_checkout)
+            btn_layout.addWidget(self.btn_checkout)
+        
         btn_layout.addWidget(self.btn_print)
         btn_layout.addWidget(self.btn_pay)
         btn_layout.addWidget(self.btn_edit)
         btn_layout.addWidget(self.btn_delete)
         main_layout.addLayout(btn_layout)
+
+    def do_checkin(self):
+        reply = QMessageBox.question(self, "Confirmar Check-In", 
+                                   f"¿Confirma el ingreso de {self.data[1]}?\nEsto marcará al cliente como ingresado.",
+                                   QMessageBox.Yes | QMessageBox.No)
+        if reply == QMessageBox.Yes:
+            if self.db.update_reservation_checkin_status(self.data[0], 1):
+                # Si hay pago pendiente, preguntar si desea cobrarlo
+                pendiente = float(self.data[11]) if self.data[11] else 0
+                if pendiente > 0:
+                    pay_reply = QMessageBox.question(self, "Pago Pendiente",
+                                                   f"La reserva tiene un saldo de ${pendiente:,.2f}.\n¿Desea registrar el pago total ahora?",
+                                                   QMessageBox.Yes | QMessageBox.No)
+                    if pay_reply == QMessageBox.Yes:
+                        self.db.record_checkin_payment(self.data[0], pendiente)
+                
+                QMessageBox.information(self, "Éxito", "Check-In registrado correctamente.")
+                self.status_changed.emit()
+
+    def do_checkout(self):
+        reply = QMessageBox.question(self, "Confirmar Check-Out", 
+                                   f"¿Confirma la salida de {self.data[1]}?\nEsto habilitará la limpieza del inmueble.",
+                                   QMessageBox.Yes | QMessageBox.No)
+        if reply == QMessageBox.Yes:
+            if self.db.update_reservation_checkout_status(self.data[0], 1):
+                QMessageBox.information(self, "Éxito", "Check-Out registrado. El inmueble ahora aparece en el panel de Limpieza.")
+                self.status_changed.emit()
 
     def format_currency(self, value):
         try:
@@ -365,6 +406,7 @@ class ReservationListPage(QWidget):
             card.btn_pay.clicked.connect(lambda chk=False, res=r: self.open_payments(res))
             card.btn_edit.clicked.connect(lambda chk=False, res=r: self.edit_reservation(res))
             card.btn_delete.clicked.connect(lambda chk=False, res=r: self.delete_reservation(res))
+            card.status_changed.connect(self.load_data)
             
             self.cards_layout.insertWidget(self.cards_layout.count() - 1, card)
 

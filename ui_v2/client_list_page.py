@@ -339,20 +339,35 @@ class ClientListPage(QWidget):
             self.load_data()
 
     def delete_client(self, c):
-        reply = QMessageBox.question(self, "Confirmar Eliminación", 
-                                   f"¿Está seguro de eliminar al cliente {c[2]} {c[3]}?",
+        client_id = c[0]
+        client_name = f"{c[2]} {c[3]}"
+
+        # 1. Verificar si tiene reservas
+        if not self.db.connect(): return
+        count = self.db.count_client_reservations(client_id)
+
+        if count > 0:
+            msg = f"El cliente '{client_name}' tiene {count} reserva(s) asociada(s).\n\n"
+            msg += "Si lo elimina, se producirá un error de base de datos debido a las restricciones de integridad.\n"
+            msg += "¿Desea ver las reservas antes de decidir?"
+
+            res = QMessageBox.warning(self, "Acción Denegada", msg, 
+                                    QMessageBox.Open | QMessageBox.Cancel, QMessageBox.Cancel)
+            if res == QMessageBox.Open:
+                self.show_history(c)
+            return
+
+        # 2. Confirmación estándar si no tiene reservas
+        reply = QMessageBox.question(self, "Confirmar Eliminación",
+                                   f"¿Está seguro de eliminar al cliente {client_name}?",
                                    QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
-        
+
         if reply == QMessageBox.Yes:
-            if not self.db.connect(): return
-            cursor = self.db.connection.cursor()
-            try:
-                cursor.execute("DELETE FROM clientes WHERE id_clientes = %s", (c[0],))
-                self.db.connection.commit()
+            if self.db.delete_client(client_id):
                 self.load_data()
                 QMessageBox.information(self, "Éxito", "Cliente eliminado correctamente.")
-            except Exception as e:
-                QMessageBox.warning(self, "Error", f"No se pudo eliminar: {e}")
+            else:
+                QMessageBox.warning(self, "Error", "No se pudo eliminar el cliente.")
 
     def send_wa(self, c):
         # c = (id, doc, nom, ape, email, tel)
