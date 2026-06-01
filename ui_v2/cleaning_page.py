@@ -116,18 +116,19 @@ class CleaningPage(QWidget):
         self.table_pending.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.table_pending.verticalHeader().setDefaultSectionSize(50)
         self.table_pending.setSelectionBehavior(QTableWidget.SelectRows)
-        self.table_pending.setSelectionMode(QTableWidget.SingleSelection)
+        self.table_pending.setSelectionMode(QTableWidget.NoSelection)
+        self.table_pending.setFocusPolicy(Qt.NoFocus)
         self.table_pending.setStyleSheet("""
             QTableWidget { 
                 border: none; 
                 gridline-color: #f1f3f5; 
                 background-color: white; 
                 color: #2c3e50;
-                selection-background-color: #ebf5fb;
-                selection-color: #2980b9;
+                selection-background-color: white;
+                selection-color: #2c3e50;
             }
             QTableWidget::item { padding: 10px; border-bottom: 1px solid #f1f3f5; }
-            QTableWidget::item:hover { background-color: #f8f9fa; }
+            QTableWidget::item:hover { background-color: white; }
             QHeaderView::section { 
                 background-color: #f8f9fa; 
                 padding: 10px; 
@@ -142,6 +143,24 @@ class CleaningPage(QWidget):
                 padding: 5px;
                 height: 30px;
             }
+            QComboBox QAbstractItemView {
+                background-color: white;
+                color: #2c3e50;
+                selection-background-color: #3498db;
+                selection-color: white;
+                border: 1px solid #d1d8e0;
+                outline: 0px;
+            }
+            QComboBox QAbstractItemView::item {
+                min-height: 35px;
+                padding-left: 10px;
+                background-color: white;
+                color: #2c3e50;
+            }
+            QComboBox QAbstractItemView::item:selected, QComboBox QAbstractItemView::item:hover {
+                background-color: #3498db;
+                color: white;
+            }
         """)
         right_layout.addWidget(self.table_pending)
 
@@ -154,17 +173,19 @@ class CleaningPage(QWidget):
         self.table_history.setHorizontalHeaderLabels(["Inmueble", "Personal", "Horas", "Total", "Fecha", "Pago"])
         self.table_history.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.table_history.verticalHeader().setDefaultSectionSize(50)
+        self.table_history.setSelectionMode(QTableWidget.NoSelection)
+        self.table_history.setFocusPolicy(Qt.NoFocus)
         self.table_history.setStyleSheet("""
             QTableWidget { 
                 border: none; 
                 gridline-color: #f1f3f5; 
                 background-color: white; 
                 color: #2c3e50;
-                selection-background-color: #ebf5fb;
-                selection-color: #2980b9;
+                selection-background-color: white;
+                selection-color: #2c3e50;
             }
             QTableWidget::item { padding: 10px; border-bottom: 1px solid #f1f3f5; }
-            QTableWidget::item:hover { background-color: #f8f9fa; }
+            QTableWidget::item:hover { background-color: white; }
             QHeaderView::section { 
                 background-color: #f8f9fa; 
                 padding: 10px; 
