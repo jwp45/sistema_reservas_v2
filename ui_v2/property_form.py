@@ -124,6 +124,14 @@ class PropertyFormDialog(QDialog):
         self.edit_price.setPlaceholderText("0.00")
         vbox_price.addWidget(self.edit_price)
         row2.addLayout(vbox_price)
+
+        vbox_clean = QVBoxLayout()
+        vbox_clean.addWidget(QLabel("Tarifa Limpieza / Hora:"))
+        self.edit_clean_fee = QLineEdit()
+        self.edit_clean_fee.setPlaceholderText("0.00")
+        vbox_clean.addWidget(self.edit_clean_fee)
+        row2.addLayout(vbox_clean)
+        
         info_layout.addLayout(row2)
 
         # Check-in/out Times
@@ -397,6 +405,7 @@ class PropertyFormDialog(QDialog):
             if len(p) > 12: self.edit_video.setText(p[12] or "")
             if len(p) > 13: self.edit_checkin.setText(p[13] or "14:00")
             if len(p) > 14: self.edit_checkout.setText(p[14] or "10:00")
+            if len(p) > 15: self.edit_clean_fee.setText(str(p[15] or "0.00"))
             
             # Cargar servicios
             servs = self.db.get_property_services(self.property_id)
@@ -410,7 +419,8 @@ class PropertyFormDialog(QDialog):
             self.edit_city.text(), self.edit_prov.text(), self.combo_tipo.currentText(),
             float(self.edit_price.text() or 0), self.spin_dorms.value(),
             self.spin_beds.value(), self.spin_baths.value(), self.edit_video.text().strip(),
-            self.edit_checkin.text().strip(), self.edit_checkout.text().strip()
+            self.edit_checkin.text().strip(), self.edit_checkout.text().strip(),
+            float(self.edit_clean_fee.text() or 0)
         )
         
         if not self.db.connect(): return
@@ -419,13 +429,15 @@ class PropertyFormDialog(QDialog):
         if self.property_id:
             query = """UPDATE inmuebles SET nombre=%s, cantidad_personas=%s, direccion=%s, 
                        localidad=%s, provincia=%s, tipo=%s, valor_dia=%s, dormitorios=%s, 
-                       camas=%s, baños=%s, video_url=%s, checkin_time=%s, checkout_time=%s WHERE id_inmueble=%s"""
+                       camas=%s, baños=%s, video_url=%s, checkin_time=%s, checkout_time=%s,
+                       tarifa_limpieza=%s WHERE id_inmueble=%s"""
             cursor.execute(query, data + (self.property_id,))
             pid = self.property_id
         else:
             query = """INSERT INTO inmuebles (nombre, cantidad_personas, direccion, localidad, 
-                       provincia, tipo, valor_dia, dormitorios, camas, baños, video_url, checkin_time, checkout_time) 
-                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"""
+                       provincia, tipo, valor_dia, dormitorios, camas, baños, video_url, 
+                       checkin_time, checkout_time, tarifa_limpieza) 
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"""
             cursor.execute(query, data)
             pid = cursor.lastrowid
             

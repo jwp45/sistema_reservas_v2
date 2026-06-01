@@ -87,7 +87,10 @@ class Database:
                     fecha_asignacion DATETIME DEFAULT CURRENT_TIMESTAMP,
                     fecha_inicio DATETIME NULL,
                     fecha_finalizacion DATETIME NULL,
-                    pago_servicio DECIMAL(10,2),
+                    tarifa_hora DECIMAL(10,2) DEFAULT 0.00,
+                    horas_trabajadas DECIMAL(10,2) DEFAULT 0.00,
+                    pago_servicio DECIMAL(10,2) DEFAULT 0.00,
+                    pagado TINYINT(1) DEFAULT 0,
                     estado ENUM('pendiente', 'en_proceso', 'completada', 'verificada') DEFAULT 'pendiente',
                     observaciones TEXT,
                     sincronizado TINYINT(1) DEFAULT 0,
@@ -96,6 +99,16 @@ class Database:
                     FOREIGN KEY (id_personal) REFERENCES personal_limpieza(id_personal)
                 )
             """)
+
+            # Verificar si faltan columnas en tareas_limpieza
+            cursor.execute("SHOW COLUMNS FROM tareas_limpieza")
+            tareas_cols = [col[0] for col in cursor.fetchall()]
+            if 'tarifa_hora' not in tareas_cols:
+                cursor.execute("ALTER TABLE tareas_limpieza ADD COLUMN tarifa_hora DECIMAL(10,2) DEFAULT 0.00")
+            if 'horas_trabajadas' not in tareas_cols:
+                cursor.execute("ALTER TABLE tareas_limpieza ADD COLUMN horas_trabajadas DECIMAL(10,2) DEFAULT 0.00")
+            if 'pagado' not in tareas_cols:
+                cursor.execute("ALTER TABLE tareas_limpieza ADD COLUMN pagado TINYINT(1) DEFAULT 0")
 
             # 4. Crear tabla historial_pagos si no existe
             cursor.execute("""
@@ -541,9 +554,10 @@ class Database:
         cursor = None
         try:
             cursor = self.connection.cursor(buffered=True)
-            query = """SELECT id_inmueble, nombre, cantidad_personas, direccion, localidad, 
+            query = """SELECT id_inmueble, nombre, cantidad_personas, direccion, localidad,
                               provincia, tipo, valor_dia, COALESCE(imagen, ''),
-                              dormitorios, camas, baños, video_url, checkin_time, checkout_time
+                              dormitorios, camas, baños, video_url, checkin_time, checkout_time,
+                              tarifa_limpieza
                        FROM inmuebles"""
             cursor.execute(query)
             result = cursor.fetchall()
@@ -1641,17 +1655,21 @@ class Database:
             return False
 
     def get_pending_cleanings(self):
-        """Busca inmuebles que necesitan limpieza (check-out hoy o sin tarea completada)"""
+        """Busca inmuebles que necesitan limpieza (check-out realizado o fecha pasada)"""
         if not self.connect(): return []
         try:
             cursor = self.connection.cursor(dictionary=True)
+            # Buscamos la última reserva de cada inmueble que ya terminó o se marcó check-out
+            # y que no tenga una tarea de limpieza completada para ESA reserva.
             query = """
-                SELECT p.*, r.fecha_egreso, r.id_reserva
+                SELECT p.*, r.fecha_egreso, r.id_reserva, t.estado as task_status, pl.nombre as staff_name
                 FROM inmuebles p
                 JOIN reservas r ON p.id_inmueble = r.id_inmueble
                 LEFT JOIN tareas_limpieza t ON p.id_inmueble = t.id_inmueble AND r.id_reserva = t.id_reserva
-                WHERE r.fecha_egreso <= CURDATE()
+                LEFT JOIN personal_limpieza pl ON t.id_personal = pl.id_personal
+                WHERE (r.checkout_status = 1 OR r.fecha_egreso <= CURDATE())
                 AND (t.id_tarea IS NULL OR t.estado != 'completada')
+                AND r.id_reserva = (SELECT MAX(id_reserva) FROM reservas WHERE id_inmueble = p.id_inmueble AND (checkout_status = 1 OR fecha_egreso <= CURDATE()))
                 GROUP BY p.id_inmueble
             """
             cursor.execute(query)
@@ -1665,7 +1683,7 @@ class Database:
         try:
             cursor = self.connection.cursor()
             query = """INSERT INTO tareas_limpieza 
-                       (id_inmueble, id_reserva, id_personal, pago_servicio, estado) 
+                       (id_inmueble, id_reserva, id_personal, tarifa_hora, estado) 
                        VALUES (%s, %s, %s, %s, 'pendiente')"""
             cursor.execute(query, (data['id_inmueble'], data.get('id_reserva'), 
                                    data['id_personal'], data['pago']))
@@ -1673,6 +1691,93 @@ class Database:
             return True
         except Exception as e:
             print(f"Error en assign_cleaning_task: {e}")
+            return False
+
+    def complete_cleaning_task(self, id_tarea, horas, observaciones=""):
+        """Calcula el monto final y marca la tarea como completada"""
+        if not self.connect(): return False
+        try:
+            cursor = self.connection.cursor(dictionary=True)
+            # 1. Obtener la tarifa por hora de la tarea
+            cursor.execute("SELECT tarifa_hora FROM tareas_limpieza WHERE id_tarea = %s", (id_tarea,))
+            task = cursor.fetchone()
+            if not task: return False
+            
+            tarifa = float(task['tarifa_hora'] or 0)
+            total = tarifa * float(horas)
+            
+            # 2. Actualizar la tarea
+            query = """UPDATE tareas_limpieza 
+                       SET horas_trabajadas = %s, pago_servicio = %s, 
+                           estado = 'completada', fecha_finalizacion = CURRENT_TIMESTAMP,
+                           observaciones = %s
+                       WHERE id_tarea = %s"""
+            cursor.execute(query, (horas, total, observaciones, id_tarea))
+            self.connection.commit()
+            return True
+        except Exception as e:
+            print(f"Error en complete_cleaning_task: {e}")
+            return False
+
+    def get_completed_cleanings(self):
+        """Retorna tareas finalizadas con sus montos calculados"""
+        if not self.connect(): return []
+        try:
+            cursor = self.connection.cursor(dictionary=True)
+            query = """
+                SELECT t.*, p.nombre as property_name, pl.nombre as staff_name
+                FROM tareas_limpieza t
+                JOIN inmuebles p ON t.id_inmueble = p.id_inmueble
+                JOIN personal_limpieza pl ON t.id_personal = pl.id_personal
+                WHERE t.estado = 'completada'
+                ORDER BY t.fecha_finalizacion DESC
+            """
+            cursor.execute(query)
+            return cursor.fetchall()
+        except Exception as e:
+            print(f"Error en get_completed_cleanings: {e}")
+            return []
+
+    def get_cleaning_debts(self):
+        """Retorna el total adeudado a cada empleado de limpieza"""
+        if not self.connect(): return []
+        try:
+            cursor = self.connection.cursor(dictionary=True)
+            query = """
+                SELECT pl.id_personal, pl.nombre, SUM(t.pago_servicio) as deuda_total, COUNT(t.id_tarea) as tareas_pendientes
+                FROM personal_limpieza pl
+                JOIN tareas_limpieza t ON pl.id_personal = t.id_personal
+                WHERE t.estado = 'completada' AND t.pagado = 0
+                GROUP BY pl.id_personal
+            """
+            cursor.execute(query)
+            return cursor.fetchall()
+        except Exception as e:
+            print(f"Error en get_cleaning_debts: {e}")
+            return []
+
+    def mark_cleaning_task_as_paid(self, id_tarea):
+        """Marca una tarea como pagada"""
+        if not self.connect(): return False
+        try:
+            cursor = self.connection.cursor()
+            cursor.execute("UPDATE tareas_limpieza SET pagado = 1 WHERE id_tarea = %s", (id_tarea,))
+            self.connection.commit()
+            return True
+        except Exception as e:
+            print(f"Error en mark_cleaning_task_as_paid: {e}")
+            return False
+
+    def mark_all_staff_tasks_as_paid(self, id_personal):
+        """Marca todas las tareas de un empleado como pagadas"""
+        if not self.connect(): return False
+        try:
+            cursor = self.connection.cursor()
+            cursor.execute("UPDATE tareas_limpieza SET pagado = 1 WHERE id_personal = %s AND estado = 'completada'", (id_personal,))
+            self.connection.commit()
+            return True
+        except Exception as e:
+            print(f"Error en mark_all_staff_tasks_as_paid: {e}")
             return False
 
     def update_property_cleaning_fee(self, prop_id, fee):
