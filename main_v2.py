@@ -40,6 +40,26 @@ def main():
             padding-left: 10px;
             background-color: white;
         }
+        QMessageBox {
+            background-color: white;
+        }
+        QMessageBox QLabel {
+            color: #2c3e50;
+            font-size: 13px;
+        }
+        QMessageBox QPushButton {
+            background-color: #f8f9fa;
+            border: 1px solid #d1d8e0;
+            border-radius: 4px;
+            padding: 5px 15px;
+            min-width: 80px;
+            font-weight: bold;
+        }
+        QMessageBox QPushButton:hover {
+            background-color: #3498db;
+            color: white;
+            border: 1px solid #3498db;
+        }
         QTableWidget {
             color: #2c3e50;
             gridline-color: #f0f2f5;

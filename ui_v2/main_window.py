@@ -2,7 +2,7 @@ import sys
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                              QHBoxLayout, QLabel, QPushButton, QFrame, 
                              QGridLayout, QScrollArea, QSpacerItem, QSizePolicy,
-                             QStackedWidget)
+                             QStackedWidget, QMessageBox, QDialog, QLineEdit, QComboBox)
 from PySide6.QtCore import Qt, QSize, QUrl, QByteArray
 from PySide6.QtGui import QFont, QIcon, QColor, QPixmap, QDesktopServices
 import os
@@ -24,6 +24,7 @@ from ui_v2.property_list_page import PropertyListPage
 from ui_v2.config_page import ConfigPage
 from ui_v2.prospect_list_page import ProspectListPage
 from ui_v2.quotation_list_page import QuotationListPage
+from ui_v2.cleaning_page import CleaningPage
 from ui_v2.widgets import BarChartWidget, HorizontalBarChartWidget, SeasonStatCard, KPICard, SidebarButton
 from utils.whatsapp_sender import open_whatsapp_chat, get_whatsapp_url
 
@@ -132,18 +133,22 @@ class MainWindow(QMainWindow):
         self.btn_inmuebles.clicked.connect(lambda: self.switch_page(6))
         self.sidebar_layout.addWidget(self.btn_inmuebles)
 
+        self.btn_limpieza = SidebarButton("🧹 Limpieza")
+        self.btn_limpieza.clicked.connect(lambda: self.switch_page(7))
+        self.sidebar_layout.addWidget(self.btn_limpieza)
+
         self.btn_finanzas = SidebarButton("💰 Finanzas")
-        self.btn_finanzas.clicked.connect(lambda: self.switch_page(7))
+        self.btn_finanzas.clicked.connect(lambda: self.switch_page(8))
         self.sidebar_layout.addWidget(self.btn_finanzas)
 
         self.btn_config = SidebarButton("⚙️ Configuración")
-        self.btn_config.clicked.connect(lambda: self.switch_page(8))
+        self.btn_config.clicked.connect(lambda: self.switch_page(9))
         self.sidebar_layout.addWidget(self.btn_config)
         
         # Agrupar botones para exclusividad
         self.nav_buttons = [self.btn_dashboard, self.btn_consultas, self.btn_reservas, 
                             self.btn_cotizaciones, self.btn_prospectos, self.btn_clientes, 
-                            self.btn_inmuebles, self.btn_finanzas, self.btn_config]
+                            self.btn_inmuebles, self.btn_limpieza, self.btn_finanzas, self.btn_config]
         
         self.sidebar_layout.addStretch()
         
@@ -187,11 +192,15 @@ class MainWindow(QMainWindow):
         self.page_inmuebles = PropertyListPage()
         self.pages.addWidget(self.page_inmuebles)
 
-        # PAGINA 7: FINANZAS
+        # PAGINA 7: LIMPIEZA
+        self.page_limpieza = CleaningPage()
+        self.pages.addWidget(self.page_limpieza)
+
+        # PAGINA 8: FINANZAS
         self.page_finanzas = FinancePage()
         self.pages.addWidget(self.page_finanzas)
 
-        # PAGINA 8: CONFIGURACIÓN
+        # PAGINA 9: CONFIGURACIÓN
         self.page_config = ConfigPage()
         self.page_config.config_updated.connect(self.refresh_dashboard)
         self.pages.addWidget(self.page_config)
@@ -352,8 +361,9 @@ class MainWindow(QMainWindow):
         elif index == 4: self.page_prospectos.load_data()
         elif index == 5: self.page_clientes.load_data()
         elif index == 6: self.page_inmuebles.load_data()
-        elif index == 7: self.page_finanzas.load_data()
-        elif index == 8: self.page_config.load_config()
+        elif index == 7: self.page_limpieza.load_data()
+        elif index == 8: self.page_finanzas.load_data()
+        elif index == 9: self.page_config.load_config()
         
         # Siempre refrescar el logo por si cambió en config
         self.load_sidebar_logo()
@@ -650,6 +660,25 @@ class MainWindow(QMainWindow):
             name = QLabel(str(r[1]).upper())
             name.setStyleSheet("font-size: 15px; font-weight: bold; color: #34495e; border: none;")
             
+            # --- Badge de Check-In ---
+            header_name = QHBoxLayout()
+            header_name.addWidget(name)
+            
+            # Si ya hizo check-in (índice 7 en egresos, para ingresos siempre es 0)
+            has_checked_in = False
+            if card_type == "CHECK-OUT" and len(r) > 7:
+                has_checked_in = bool(r[7])
+            
+            if has_checked_in:
+                badge = QLabel(" ✓ CHECK-IN ")
+                badge.setStyleSheet("""
+                    background-color: #e8f5e9; color: #27ae60; 
+                    font-size: 9px; font-weight: 800; border-radius: 4px;
+                    border: 1px solid #c8e6c9; padding: 2px 5px;
+                """)
+                header_name.addWidget(badge)
+            header_name.addStretch()
+            
             prop = QLabel(f"  🏠 {r[4]}  ")
             prop.setStyleSheet("font-size: 13px; font-weight: bold; color: #2c3e50; background-color: #f1f3f5; border-radius: 6px; border: 1px solid #e9ecef; padding: 4px;")
             
@@ -667,15 +696,15 @@ class MainWindow(QMainWindow):
                                    QDesktopServices.openUrl(QUrl(get_whatsapp_url(p, f"Hola {n}!"))))
             
             if card_type == "CHECK-IN":
-                btn_action = QPushButton("📥 Check-In")
+                btn_action = QPushButton("📥 Procesar Ingreso")
                 btn_action.setStyleSheet("QPushButton { background-color: #3498db; color: white; border-radius: 6px; font-weight: bold; font-size: 10px; }")
                 btn_action.clicked.connect(lambda checked=False, rid=res_id: self._handle_checkin(rid))
             else:
-                btn_action = QPushButton("📤 Check-Out")
+                btn_action = QPushButton("📤 Procesar Salida")
                 btn_action.setStyleSheet("QPushButton { background-color: #e67e22; color: white; border-radius: 6px; font-weight: bold; font-size: 10px; }")
                 btn_action.clicked.connect(lambda checked=False, rid=res_id: self._handle_checkout(rid))
                 
-            btn_action.setFixedSize(90, 30)
+            btn_action.setFixedSize(110, 30)
             btn_action.setCursor(Qt.PointingHandCursor)
             
             actions_layout.addWidget(btn_wa)
@@ -683,7 +712,7 @@ class MainWindow(QMainWindow):
             actions_layout.addStretch()
             
             c_layout.addWidget(date_lbl)
-            c_layout.addWidget(name)
+            c_layout.addLayout(header_name)
             c_layout.addWidget(prop, 0, Qt.AlignLeft)
             c_layout.addLayout(actions_layout)
             
@@ -692,3 +721,199 @@ class MainWindow(QMainWindow):
         stack.setCurrentIndex(0)
 
         return card
+
+    def _handle_checkin(self, reservation_id):
+        # 1. Obtener detalles completos
+        data = self.db.get_reservation_details(reservation_id)
+        if not data:
+            QMessageBox.critical(self, "Error", "No se pudieron obtener los detalles de la reserva.")
+            return
+
+        # Validación: Solo se puede hacer check-in en la fecha de ingreso programada
+        today = date.today()
+        # Asegurar que comparamos fechas (si data['fecha_ingreso'] es datetime)
+        checkin_date = data['fecha_ingreso'].date() if isinstance(data['fecha_ingreso'], datetime) else data['fecha_ingreso']
+        
+        if today != checkin_date:
+            QMessageBox.warning(self, "Fecha no válida", 
+                                f"No se puede realizar el Check-In hoy.\n\n"
+                                f"La fecha de ingreso programada es el {checkin_date.strftime('%d/%m/%Y')}.\n"
+                                f"Hoy es {today.strftime('%d/%m/%Y')}.")
+            return
+
+        # 2. Abrir el nuevo diálogo
+        dialog = CheckInDialog(self, data)
+        if dialog.exec():
+            res = dialog.get_result()
+            
+            # 3. Si eligió pago completo, registrar el dinero
+            if res['pago_completo']:
+                if not self.db.record_checkin_payment(reservation_id, res['monto_a_cobrar']):
+                    QMessageBox.warning(self, "Error de Pago", "No se pudo registrar el pago, pero el ingreso continuará.")
+
+            # 4. Marcar como ingresado en la DB
+            if self.db.update_reservation_checkin_status(reservation_id, 1):
+                QMessageBox.information(self, "Éxito", f"Huésped ingresado correctamente el {res['fecha_real']}.")
+                self.refresh_dashboard()
+            else:
+                QMessageBox.critical(self, "Error", "No se pudo actualizar el estado de check-in.")
+
+    def _handle_checkout(self, reservation_id):
+        # 1. Obtener detalles completos para validaciones
+        data = self.db.get_reservation_details(reservation_id)
+        if not data:
+            QMessageBox.critical(self, "Error", "No se pudieron obtener los detalles de la reserva.")
+            return
+
+        # Validación 1: No se puede hacer check-out sin check-in previo
+        if not data.get('checkin_status'):
+            QMessageBox.warning(self, "Acción no permitida", 
+                                "No se puede realizar el Check-Out porque aún no se ha registrado el Check-In para esta reserva.")
+            return
+
+        # Validación 2: Alerta de Deuda
+        pending = float(data.get('pago_pendiente', 0))
+        if pending > 0:
+            msg = f"⚠️ ATENCIÓN: El cliente {data['nombre']} {data['apellido']} todavía ADEUDA ${pending:,.2f}.\n\n"
+            msg += "¿Desea continuar con el Check-Out de todas formas?"
+            res = QMessageBox.warning(self, "Cliente con Deuda", msg, 
+                                     QMessageBox.Yes | QMessageBox.No)
+            if res == QMessageBox.No:
+                return
+
+        res = QMessageBox.question(self, "Confirmar Check-Out", 
+                                 f"¿Desea marcar la reserva #{reservation_id} como FINALIZADA?",
+                                 QMessageBox.Yes | QMessageBox.No)
+        if res == QMessageBox.Yes:
+            if self.db.update_reservation_checkout_status(reservation_id, 1):
+                QMessageBox.information(self, "Éxito", "Check-Out registrado correctamente.")
+                
+                # Preguntar si desea crear orden de limpieza
+                clean = QMessageBox.question(self, "Limpieza", 
+                                          "¿Desea generar una orden de limpieza para este inmueble?",
+                                          QMessageBox.Yes | QMessageBox.No)
+                if clean == QMessageBox.Yes:
+                    self.switch_page(7) # Ir a la página de limpieza
+                else:
+                    self.refresh_dashboard()
+            else:
+                QMessageBox.critical(self, "Error", "No se pudo actualizar el estado de check-out.")
+
+class CheckInDialog(QDialog):
+    def __init__(self, parent=None, reservation_data=None):
+        super().__init__(parent)
+        self.data = reservation_data
+        self.setWindowTitle(f"Procesar Check-In - Reserva #{self.data['id_reserva']}")
+        self.setFixedWidth(500)
+        self.init_ui()
+
+    def init_ui(self):
+        from PySide6.QtWidgets import QFormLayout
+        self.setStyleSheet("background-color: white;")
+        layout = QVBoxLayout(self)
+        layout.setSpacing(25)
+        layout.setContentsMargins(30, 30, 30, 30)
+        
+        # Header
+        title = QLabel(f"Check-In Reserva #{self.data['id_reserva']}")
+        title.setStyleSheet("font-size: 20px; font-weight: bold; color: #2c3e50; border: none;")
+        layout.addWidget(title)
+        
+        # --- INFO CLIENTE ---
+        sec_client = QFrame()
+        sec_client.setStyleSheet("background-color: #f8f9fa; border-radius: 10px; padding: 10px; border: 1px solid #eef0f2;")
+        client_layout = QFormLayout(sec_client)
+        client_layout.setSpacing(10)
+        
+        lbl_name = QLabel(f"{self.data['nombre']} {self.data['apellido']}")
+        lbl_name.setStyleSheet("font-weight: bold; font-size: 15px; color: #3498db; border: none;")
+        
+        client_layout.addRow("👤 Huésped:", lbl_name)
+        client_layout.addRow("🆔 ID Cliente:", QLabel(str(self.data['id_cliente'])))
+        client_layout.addRow("📞 Teléfono:", QLabel(str(self.data['telefono'])))
+        client_layout.addRow("📧 Email:", QLabel(str(self.data['email'])))
+        layout.addWidget(sec_client)
+        
+        # --- INFO ESTADIA ---
+        sec_stay = QFrame()
+        sec_stay.setStyleSheet("background-color: #ffffff; border-radius: 10px; border: 1px solid #d1d8e0; padding: 10px;")
+        stay_layout = QFormLayout(sec_stay)
+        stay_layout.setSpacing(12)
+        
+        self.edit_date = QLineEdit(date.today().strftime("%d/%m/%Y"))
+        self.edit_date.setFixedHeight(35)
+        self.edit_date.setStyleSheet("background-color: #f8f9fa; border: 1px solid #d1d8e0; border-radius: 5px; padding-left: 10px;")
+        stay_layout.addRow("📅 Fecha Real Ingreso:", self.edit_date)
+        
+        lbl_inm = QLabel(self.data['inmueble_nombre'])
+        lbl_inm.setStyleSheet("font-weight: bold; color: #2c3e50;")
+        stay_layout.addRow("🏠 Inmueble:", lbl_inm)
+        layout.addWidget(sec_stay)
+        
+        # --- FINANZAS ---
+        sec_fin = QFrame()
+        sec_fin.setStyleSheet("background-color: #ebf5fb; border-radius: 10px; border: 1px solid #3498db; padding: 15px;")
+        fin_layout = QFormLayout(sec_fin)
+        fin_layout.setSpacing(10)
+        
+        fin_layout.addRow("Costo Total:", QLabel(f"${float(self.data['costo_con_descuento']):,.2f}"))
+        fin_layout.addRow("Adelanto Recibido:", QLabel(f"${float(self.data['adelanto']):,.2f}"))
+        
+        self.lbl_pending = QLabel(f"${float(self.data['pago_pendiente']):,.2f}")
+        self.lbl_pending.setStyleSheet("font-weight: 800; font-size: 22px; color: #e74c3c; border: none;")
+        fin_layout.addRow("💰 SALDO PENDIENTE:", self.lbl_pending)
+        
+        self.combo_payment = QComboBox()
+        self.combo_payment.addItems(["Pago Completo", "Adeuda Pago"])
+        self.combo_payment.setFixedHeight(40)
+        self.combo_payment.setStyleSheet("""
+            QComboBox { 
+                background-color: white; border: 1px solid #3498db; border-radius: 5px; 
+                padding-left: 10px; padding-top: 2px; padding-bottom: 2px;
+                font-weight: bold; color: #2c3e50;
+            }
+            QComboBox::drop-down { border: 0px; }
+            QComboBox::down-arrow { image: none; border-left: 5px solid transparent; border-right: 5px solid transparent; border-top: 5px solid #3498db; margin-right: 10px; }
+            QComboBox QAbstractItemView {
+                background-color: white;
+                selection-background-color: #3498db;
+                selection-color: white;
+                outline: 0px;
+                border: 1px solid #3498db;
+            }
+            QComboBox QAbstractItemView::item {
+                min-height: 40px;
+                padding-left: 10px;
+                color: #2c3e50;
+            }
+        """)
+        fin_layout.addRow("📝 Estado de Pago:", self.combo_payment)
+        layout.addWidget(sec_fin)
+        
+        # --- BOTONES ---
+        btns = QHBoxLayout()
+        btns.setSpacing(15)
+        
+        btn_cancel = QPushButton("Cancelar")
+        btn_cancel.setFixedHeight(45)
+        btn_cancel.setStyleSheet("background-color: white; border: 1px solid #d1d8e0; border-radius: 8px; font-weight: bold; color: #7f8c8d;")
+        btn_cancel.clicked.connect(self.reject)
+        
+        self.btn_confirm = QPushButton("✓ CONFIRMAR INGRESO")
+        self.btn_confirm.setFixedHeight(45)
+        self.btn_confirm.setStyleSheet("""
+            QPushButton { background-color: #3498db; color: white; font-weight: bold; border-radius: 8px; border: none; font-size: 13px; }
+            QPushButton:hover { background-color: #2980b9; }
+        """)
+        self.btn_confirm.clicked.connect(self.accept)
+        
+        btns.addWidget(btn_cancel)
+        btns.addWidget(self.btn_confirm, 1)
+        layout.addLayout(btns)
+
+    def get_result(self):
+        return {
+            "fecha_real": self.edit_date.text(),
+            "pago_completo": self.combo_payment.currentText() == "Pago Completo",
+            "monto_a_cobrar": float(self.data['pago_pendiente'])
+        }

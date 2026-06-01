@@ -65,11 +65,97 @@ class Database:
                     FOREIGN KEY (id_inmueble) REFERENCES inmuebles(id_inmueble) ON DELETE CASCADE
                 )
             """)
-            
-            # 3. Sincronización quirúrgica (SOLO si las columnas no están)
+
+            # 3. Crear tablas de limpieza si no existen
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS personal_limpieza (
+                    id_personal INT PRIMARY KEY AUTO_INCREMENT,
+                    nombre VARCHAR(100) NOT NULL,
+                    telefono VARCHAR(20),
+                    pin_acceso VARCHAR(10),
+                    estado ENUM('activo', 'inactivo') DEFAULT 'activo',
+                    sincronizado TINYINT(1) DEFAULT 0
+                )
+            """)
+
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS tareas_limpieza (
+                    id_tarea INT PRIMARY KEY AUTO_INCREMENT,
+                    id_inmueble INT,
+                    id_reserva INT,
+                    id_personal INT,
+                    fecha_asignacion DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    fecha_inicio DATETIME NULL,
+                    fecha_finalizacion DATETIME NULL,
+                    pago_servicio DECIMAL(10,2),
+                    estado ENUM('pendiente', 'en_proceso', 'completada', 'verificada') DEFAULT 'pendiente',
+                    observaciones TEXT,
+                    sincronizado TINYINT(1) DEFAULT 0,
+                    FOREIGN KEY (id_inmueble) REFERENCES inmuebles(id_inmueble),
+                    FOREIGN KEY (id_reserva) REFERENCES reservas(id_reserva),
+                    FOREIGN KEY (id_personal) REFERENCES personal_limpieza(id_personal)
+                )
+            """)
+
+            # 4. Crear tabla historial_pagos si no existe
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS historial_pagos (
+                    id_pago INT PRIMARY KEY AUTO_INCREMENT,
+                    id_reserva INT,
+                    monto DECIMAL(10,2),
+                    fecha_pago DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    nota VARCHAR(255) DEFAULT NULL,
+                    FOREIGN KEY (id_reserva) REFERENCES reservas(id_reserva) ON DELETE CASCADE
+                )
+            """)
+
+            # Sincronización quirúrgica de historial_pagos
+            cursor.execute("DESCRIBE historial_pagos")
+            pay_cols = [c[0] for c in cursor.fetchall()]
+            if 'nota' not in pay_cols:
+                cursor.execute("ALTER TABLE historial_pagos ADD COLUMN nota VARCHAR(255) DEFAULT NULL")
+
+            # Sincronización de columnas adicionales en Inmuebles
+            cursor.execute("DESCRIBE inmuebles")
+            prop_cols = [c[0] for c in cursor.fetchall()]
+            if 'tarifa_limpieza' not in prop_cols:
+                cursor.execute("ALTER TABLE inmuebles ADD COLUMN tarifa_limpieza DECIMAL(10,2) DEFAULT 0.00")
+
+            # 4. Crear tabla de configuración (Aseguramos columnas de temporada y Resend)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS configuracion (
+                    id INT PRIMARY KEY DEFAULT 1,
+                    smtp_server VARCHAR(255),
+                    smtp_port INT,
+                    smtp_user VARCHAR(255),
+                    smtp_password VARCHAR(255),
+                    from_email VARCHAR(255),
+                    business_name VARCHAR(255),
+                    whatsapp_number VARCHAR(50),
+                    logo_path VARCHAR(255),
+                    season_start DATE DEFAULT NULL,
+                    season_end DATE DEFAULT NULL,
+                    resend_api_key VARCHAR(255),
+                    email_service_type VARCHAR(20) DEFAULT 'SMTP',
+                    channel_quotations VARCHAR(20) DEFAULT 'Both',
+                    channel_reservations VARCHAR(20) DEFAULT 'Email'
+                )
+            """)
+
+            # Sincronización quirúrgica de configuración
+            cursor.execute("DESCRIBE configuracion")
+            config_cols = [c[0] for c in cursor.fetchall()]
+            if 'channel_cleaning' not in config_cols:
+                cursor.execute("ALTER TABLE configuracion ADD COLUMN channel_cleaning VARCHAR(20) DEFAULT 'Both'")
+            if 'firebase_api_key' not in config_cols:
+                cursor.execute("ALTER TABLE configuracion ADD COLUMN firebase_api_key TEXT")
+            if 'firebase_project_id' not in config_cols:
+                cursor.execute("ALTER TABLE configuracion ADD COLUMN firebase_project_id VARCHAR(100)")
+
+            # 5. Sincronización quirúrgica (SOLO si las columnas no están)
             cursor.execute("DESCRIBE cotizaciones")
             cols = {c[0]: c for c in cursor.fetchall()}
-            
+
             if 'id_prospecto' not in cols:
                 cursor.execute("SET FOREIGN_KEY_CHECKS=0")
                 cursor.execute("ALTER TABLE cotizaciones ADD COLUMN id_prospecto INT NULL AFTER id_cliente")
@@ -693,7 +779,7 @@ class Database:
                               i.nombre, r.fecha_ingreso, r.fecha_egreso, r.noches,
                               r.valor_dia, r.costo_total, r.costo_con_descuento,
                               r.adelanto, r.pago_pendiente, r.provincia, r.id_inmueble,
-                              r.fecha_creacion, r.wa_last_status
+                              r.fecha_creacion, r.wa_last_status, r.checkin_status
                        FROM reservas r
                        JOIN clientes c ON r.id_cliente = c.id_clientes
                        JOIN inmuebles i ON r.id_inmueble = i.id_inmueble
@@ -875,7 +961,8 @@ class Database:
         try:
             cursor = self.connection.cursor(buffered=True)
             query = """SELECT r.id_reserva, CONCAT(c.nombre, ' ', c.apellido), c.telefono,
-                               i.provincia, i.nombre, r.fecha_ingreso, r.fecha_egreso
+                               i.provincia, i.nombre, r.fecha_ingreso, r.fecha_egreso,
+                               r.checkin_status
                         FROM reservas r
                         JOIN clientes c ON r.id_cliente = c.id_clientes
                         JOIN inmuebles i ON r.id_inmueble = i.id_inmueble
@@ -1526,3 +1613,154 @@ class Database:
         finally:
             if cursor: cursor.close()
 
+
+    # --- MÉTODOS DE LIMPIEZA ---
+    def get_cleaning_staff(self, active_only=True):
+        if not self.connect(): return []
+        try:
+            cursor = self.connection.cursor()
+            query = "SELECT * FROM personal_limpieza"
+            if active_only:
+                query += " WHERE estado = 'activo'"
+            cursor.execute(query)
+            return cursor.fetchall()
+        except Exception as e:
+            print(f"Error en get_cleaning_staff: {e}")
+            return []
+
+    def add_cleaning_staff(self, data):
+        if not self.connect(): return False
+        try:
+            cursor = self.connection.cursor()
+            query = "INSERT INTO personal_limpieza (nombre, telefono, pin_acceso) VALUES (%s, %s, %s)"
+            cursor.execute(query, (data['nombre'], data['telefono'], data['pin']))
+            self.connection.commit()
+            return True
+        except Exception as e:
+            print(f"Error en add_cleaning_staff: {e}")
+            return False
+
+    def get_pending_cleanings(self):
+        """Busca inmuebles que necesitan limpieza (check-out hoy o sin tarea completada)"""
+        if not self.connect(): return []
+        try:
+            cursor = self.connection.cursor(dictionary=True)
+            query = """
+                SELECT p.*, r.fecha_egreso, r.id_reserva
+                FROM inmuebles p
+                JOIN reservas r ON p.id_inmueble = r.id_inmueble
+                LEFT JOIN tareas_limpieza t ON p.id_inmueble = t.id_inmueble AND r.id_reserva = t.id_reserva
+                WHERE r.fecha_egreso <= CURDATE()
+                AND (t.id_tarea IS NULL OR t.estado != 'completada')
+                GROUP BY p.id_inmueble
+            """
+            cursor.execute(query)
+            return cursor.fetchall()
+        except Exception as e:
+            print(f"Error en get_pending_cleanings: {e}")
+            return []
+
+    def assign_cleaning_task(self, data):
+        if not self.connect(): return False
+        try:
+            cursor = self.connection.cursor()
+            query = """INSERT INTO tareas_limpieza 
+                       (id_inmueble, id_reserva, id_personal, pago_servicio, estado) 
+                       VALUES (%s, %s, %s, %s, 'pendiente')"""
+            cursor.execute(query, (data['id_inmueble'], data.get('id_reserva'), 
+                                   data['id_personal'], data['pago']))
+            self.connection.commit()
+            return True
+        except Exception as e:
+            print(f"Error en assign_cleaning_task: {e}")
+            return False
+
+    def update_property_cleaning_fee(self, prop_id, fee):
+        if not self.connect(): return False
+        try:
+            cursor = self.connection.cursor()
+            cursor.execute("UPDATE inmuebles SET tarifa_limpieza = %s WHERE id_inmueble = %s", (fee, prop_id))
+            self.connection.commit()
+            return True
+        except Exception as e:
+            print(f"Error en update_property_cleaning_fee: {e}")
+            return False
+
+    def update_reservation_checkin_status(self, reservation_id, status):
+        cursor = None
+        try:
+            cursor = self.connection.cursor(buffered=True)
+            cursor.execute("UPDATE reservas SET checkin_status = %s WHERE id_reserva = %s", (status, reservation_id))
+            self.connection.commit()
+            return True
+        except Exception as e:
+            print(f"Error al actualizar checkin_status: {e}")
+            return False
+        finally:
+            if cursor: cursor.close()
+
+    def update_reservation_checkout_status(self, reservation_id, status):
+        cursor = None
+        try:
+            cursor = self.connection.cursor(buffered=True)
+            cursor.execute("UPDATE reservas SET checkout_status = %s WHERE id_reserva = %s", (status, reservation_id))
+            self.connection.commit()
+            return True
+        except Exception as e:
+            print(f"Error al actualizar checkout_status: {e}")
+            return False
+        finally:
+            if cursor: cursor.close()
+
+    def get_reservation_status(self, reservation_id):
+        """Obtiene los estados de checkin y checkout de una reserva."""
+        cursor = None
+        try:
+            cursor = self.connection.cursor(dictionary=True, buffered=True)
+            cursor.execute("SELECT checkin_status, checkout_status FROM reservas WHERE id_reserva = %s", (reservation_id,))
+            return cursor.fetchone()
+        except Exception as e:
+            print(f"Error al obtener estados de reserva: {e}")
+            return None
+        finally:
+            if cursor: cursor.close()
+
+    def get_reservation_details(self, reservation_id):
+        """Obtiene detalles completos de una reserva y su cliente."""
+        cursor = None
+        try:
+            cursor = self.connection.cursor(dictionary=True, buffered=True)
+            query = """
+                SELECT r.*, c.nombre, c.apellido, c.telefono, c.email, i.nombre as inmueble_nombre
+                FROM reservas r
+                JOIN clientes c ON r.id_cliente = c.id_clientes
+                JOIN inmuebles i ON r.id_inmueble = i.id_inmueble
+                WHERE r.id_reserva = %s
+            """
+            cursor.execute(query, (reservation_id,))
+            return cursor.fetchone()
+        except Exception as e:
+            print(f"Error al obtener detalles de reserva: {e}")
+            return None
+        finally:
+            if cursor: cursor.close()
+
+    def record_checkin_payment(self, reservation_id, amount):
+        """Registra el pago final realizado durante el check-in."""
+        if amount <= 0: return True
+        cursor = None
+        try:
+            cursor = self.connection.cursor(buffered=True)
+            # 1. Registrar en historial de pagos
+            cursor.execute("INSERT INTO historial_pagos (id_reserva, monto, nota) VALUES (%s, %s, 'Pago en Check-In')", 
+                         (reservation_id, amount))
+            # 2. Actualizar adelanto y pendiente en la reserva
+            cursor.execute("UPDATE reservas SET adelanto = adelanto + %s, pago_pendiente = pago_pendiente - %s WHERE id_reserva = %s",
+                         (amount, amount, reservation_id))
+            self.connection.commit()
+            return True
+        except Exception as e:
+            print(f"Error al registrar pago de check-in: {e}")
+            return False
+        finally:
+            if cursor: cursor.close()

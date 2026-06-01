@@ -79,8 +79,25 @@ class ReservationCard(QFrame):
         info_layout = QVBoxLayout()
         info_layout.setSpacing(4)
         
+        # --- Nombre + Badge Ingresado ---
+        name_row = QHBoxLayout()
         lbl_client = QLabel(str(self.data[1]).upper())
         lbl_client.setStyleSheet("font-size: 16px; font-weight: bold; color: #2c3e50; border: none;")
+        name_row.addWidget(lbl_client)
+        
+        # El índice de checkin_status en get_all_reservations es 16
+        is_ingresado = bool(self.data[16]) if len(self.data) > 16 else False
+        if is_ingresado:
+            ingreso_lbl = QLabel(" ✓ INGRESADO ")
+            ingreso_lbl.setStyleSheet("""
+                background-color: #3498db; color: white; 
+                font-size: 9px; font-weight: bold; 
+                padding: 3px 6px; border-radius: 4px;
+                margin-left: 10px;
+            """)
+            name_row.addWidget(ingreso_lbl)
+        name_row.addStretch()
+        info_layout.addLayout(name_row)
         
         lbl_prop = QLabel(f"🏠 {self.data[3]}")
         lbl_prop.setStyleSheet("font-size: 13px; color: #34495e; border: none;")
@@ -94,12 +111,12 @@ class ReservationCard(QFrame):
             created_str = self.fmt_date(created_at)
             lbl_created = QLabel(f"📝 Registrada: {created_str}")
             lbl_created.setStyleSheet("font-size: 11px; color: #95a5a6; border: none; font-style: italic;")
-            info_layout.addWidget(lbl_client)
+            # info_layout.addWidget(lbl_client) -> Ya agregado en name_row
             info_layout.addWidget(lbl_prop)
             info_layout.addWidget(lbl_period)
             info_layout.addWidget(lbl_created)
         except:
-            info_layout.addWidget(lbl_client)
+            # info_layout.addWidget(lbl_client) -> Ya agregado en name_row
             info_layout.addWidget(lbl_prop)
             info_layout.addWidget(lbl_period)
         
